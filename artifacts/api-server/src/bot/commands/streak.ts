@@ -2,6 +2,7 @@ import { SlashCommandBuilder, EmbedBuilder, type ChatInputCommandInteraction } f
 import { db } from "@workspace/db";
 import { xpUsersTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { replyIfNotStarted } from "../utils";
 
 const BASE_DAILY_XP = 100;
 const STREAK_BONUS_PER_DAY = 15;
@@ -18,6 +19,7 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply();
+  if (await replyIfNotStarted(interaction)) return;
 
   const target = interaction.options.getUser("user") ?? interaction.user;
   const rows = await db.select().from(xpUsersTable).where(eq(xpUsersTable.userId, target.id));

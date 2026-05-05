@@ -9,6 +9,7 @@ import { xpUsersTable, serverXpTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { levelFromXp } from "../xp";
 import { logger } from "../../lib/logger";
+import { replyIfNotStarted } from "../utils";
 
 export const data = new SlashCommandBuilder()
   .setName("adminaward")
@@ -26,6 +27,7 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
+  if (await replyIfNotStarted(interaction)) return;
 
   const target = interaction.options.getUser("user", true);
   const amount = interaction.options.getInteger("amount", true);

@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { xpUsersTable } from "@workspace/db/schema";
 import { desc } from "drizzle-orm";
 import { levelFromXp } from "../xp";
+import { replyIfNotStarted } from "../utils";
 
 export const data = new SlashCommandBuilder()
   .setName("leaderboard")
@@ -15,6 +16,7 @@ const PAGE_SIZE = 10;
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply();
+  if (await replyIfNotStarted(interaction)) return;
 
   const page = (interaction.options.getInteger("page") ?? 1) - 1;
   const offset = page * PAGE_SIZE;

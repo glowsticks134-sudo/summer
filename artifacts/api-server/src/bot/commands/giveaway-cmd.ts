@@ -8,6 +8,7 @@ import {
 } from "discord.js";
 import { startGiveaway } from "../giveaway";
 import { logger } from "../../lib/logger";
+import { replyIfNotStarted } from "../utils";
 
 export const data = new SlashCommandBuilder()
   .setName("giveaway")
@@ -25,6 +26,7 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction: ChatInputCommandInteraction, client: Client): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
+  if (await replyIfNotStarted(interaction)) return;
 
   const prize = interaction.options.getString("prize", true);
   const minutes = interaction.options.getInteger("minutes", true);

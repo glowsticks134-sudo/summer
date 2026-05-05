@@ -8,6 +8,7 @@ import {
 } from "discord.js";
 import { startQuickDrop } from "../quickdrop";
 import { logger } from "../../lib/logger";
+import { replyIfNotStarted } from "../utils";
 
 export const data = new SlashCommandBuilder()
   .setName("drop")
@@ -22,6 +23,7 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction: ChatInputCommandInteraction, client: Client): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
+  if (await replyIfNotStarted(interaction)) return;
 
   const prize = interaction.options.getString("prize", true);
   const seconds = interaction.options.getInteger("seconds") ?? 60;

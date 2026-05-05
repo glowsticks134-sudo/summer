@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { serverXpTable, milestonesTable } from "@workspace/db/schema";
 import { eq, gt } from "drizzle-orm";
 import { MILESTONE_DEFS } from "../milestones";
+import { replyIfNotStarted } from "../utils";
 
 export const data = new SlashCommandBuilder()
   .setName("serverprogress")
@@ -10,6 +11,7 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply();
+  if (await replyIfNotStarted(interaction)) return;
 
   const serverXpRows = await db.select().from(serverXpTable).where(eq(serverXpTable.id, 1));
   const totalXp = serverXpRows[0]?.totalXp ?? 0;

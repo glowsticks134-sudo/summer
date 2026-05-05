@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { xpUsersTable } from "@workspace/db/schema";
 import { desc, gt } from "drizzle-orm";
 import { levelFromXp } from "../xp";
+import { replyIfNotStarted } from "../utils";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -12,6 +13,7 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply();
+  if (await replyIfNotStarted(interaction)) return;
 
   const now = new Date();
   const weekAgo = new Date(now.getTime() - WEEK_MS);
