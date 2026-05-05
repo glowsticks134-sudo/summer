@@ -2,7 +2,7 @@
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+pnpm workspace monorepo using TypeScript. Contains an Express API server that also runs a Discord bot for the **2026 Summer Break Event**.
 
 ## Stack
 
@@ -13,15 +13,73 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **API framework**: Express 5
 - **Database**: PostgreSQL + Drizzle ORM
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+- **Discord**: discord.js v14
+- **Build**: esbuild (ESM bundle)
 
 ## Key Commands
 
 - `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
+- `pnpm run typecheck:libs` — build composite libs (run before api-server typecheck after schema changes)
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+- `pnpm --filter @workspace/api-server run build` — build API server
+
+## Discord Bot — 2026 Summer Break Event
+
+The bot lives in `artifacts/api-server/src/bot/`. It starts alongside the Express server.
+
+### Required Secrets
+- `DISCORD_BOT_TOKEN` — from Discord Developer Portal → your app → Bot → Reset Token
+- `DISCORD_GUILD_ID` — your server's ID (right-click server → Copy Server ID)
+
+### Required Bot Permissions
+Manage Roles, Manage Channels, Manage Emojis, Send Messages, Read Message History, Add Reactions, Message Content Intent (enabled in Portal)
+
+### Features
+- **XP Tracking**: 15–25 XP per message, 60-second cooldown per user
+- **Participant Role**: "2026 Summer Break Event" role auto-assigned on first XP
+- **Level-up announcements** in the channel where the message was sent
+- **Server Milestones**: 10 milestones based on cumulative server XP that unlock rewards
+
+### Slash Commands
+- `/rank [user]` — shows personal XP, level, rank, and progress bar
+- `/leaderboard [page]` — top earners with medals
+- `/serverprogress` — full milestone tracker with progress bar
+
+### Milestones (Server Total XP)
+| XP | Reward |
+|---|---|
+| 1,000 | #summer-lounge channel created |
+| 5,000 | Summer emoji announcement |
+| 15,000 | "Summer Scout" role → top 5 |
+| 30,000 | Mini Giveaway (30 min, 1 winner) |
+| 50,000 | Quick Drop (first to react ⚡ wins) |
+| 75,000 | #vip-summer-lounge channel created |
+| 100,000 | "Summer Warrior" role → top 10 |
+| 150,000 | Big Giveaway (1 hour, 3 winners) |
+| 200,000 | #summer-hq secret channel |
+| 300,000 | "Summer Legend" role → top 3 + Grand Finale |
+
+### File Structure
+```
+artifacts/api-server/src/bot/
+  index.ts              — bot client init, starts with Express server
+  xp.ts                 — XP awarding, cooldown, level calc, event role
+  milestones.ts         — milestone definitions, checking, reward execution
+  giveaway.ts           — giveaway system with reaction entry
+  quickdrop.ts          — quick drop (first to react wins)
+  commands/
+    rank.ts             — /rank command
+    leaderboard.ts      — /leaderboard command
+    serverprogress.ts   — /serverprogress command
+  events/
+    ready.ts            — registers slash commands, seeds milestone DB
+    messageCreate.ts    — awards XP and checks milestones on every message
+    interactionCreate.ts — routes slash commands to handlers
+
+lib/db/src/schema/
+  xpUsers.ts            — xp_users table + server_xp table
+  milestones.ts         — milestones table
+  giveaways.ts          — giveaways table
+```
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
