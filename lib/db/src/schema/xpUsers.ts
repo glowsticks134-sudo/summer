@@ -11,6 +11,10 @@ export const xpUsersTable = pgTable("xp_users", {
   totalMessages: integer("total_messages").notNull().default(0),
   lastXpAt: timestamp("last_xp_at"),
   joinedAt: timestamp("joined_at").notNull().defaultNow(),
+  lastDailyAt: timestamp("last_daily_at"),
+  dailyStreak: integer("daily_streak").notNull().default(0),
+  weeklyXp: integer("weekly_xp").notNull().default(0),
+  weekStartAt: timestamp("week_start_at"),
 });
 
 export const serverXpTable = pgTable("server_xp", {

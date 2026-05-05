@@ -10,6 +10,14 @@ import * as serverProgressCommand from "../commands/serverprogress";
 import * as countdownCommand from "../commands/countdown";
 import * as setEventStartCommand from "../commands/seteventstart";
 import * as postSignupCommand from "../commands/postsignup";
+import * as dailyCommand from "../commands/daily";
+import * as streakCommand from "../commands/streak";
+import * as weeklyCommand from "../commands/weekly";
+import * as eventInfoCommand from "../commands/eventinfo";
+import * as triviaCommand from "../commands/trivia";
+import * as adminAwardCommand from "../commands/adminaward";
+import * as giveawayCommand from "../commands/giveaway-cmd";
+import * as dropCommand from "../commands/drop-cmd";
 
 type SlashExecutor = (interaction: Parameters<typeof rankCommand.execute>[0], client: Client) => Promise<void>;
 
@@ -20,6 +28,14 @@ const commandMap = new Map<string, SlashExecutor>([
   [countdownCommand.data.name, (i) => countdownCommand.execute(i)],
   [setEventStartCommand.data.name, (i, c) => setEventStartCommand.execute(i, c)],
   [postSignupCommand.data.name, (i) => postSignupCommand.execute(i)],
+  [dailyCommand.data.name, (i) => dailyCommand.execute(i)],
+  [streakCommand.data.name, (i) => streakCommand.execute(i)],
+  [weeklyCommand.data.name, (i) => weeklyCommand.execute(i)],
+  [eventInfoCommand.data.name, (i) => eventInfoCommand.execute(i)],
+  [triviaCommand.data.name, (i) => triviaCommand.execute(i)],
+  [adminAwardCommand.data.name, (i) => adminAwardCommand.execute(i)],
+  [giveawayCommand.data.name, (i, c) => giveawayCommand.execute(i, c)],
+  [dropCommand.data.name, (i, c) => dropCommand.execute(i, c)],
 ]);
 
 export async function onInteractionCreate(client: Client, interaction: Interaction): Promise<void> {
@@ -47,8 +63,27 @@ export async function onInteractionCreate(client: Client, interaction: Interacti
 }
 
 async function handleButton(client: Client, interaction: ButtonInteraction): Promise<void> {
-  if (interaction.customId !== "summer_signup") return;
+  const { customId } = interaction;
 
+  // Trivia buttons: trivia_A_channelId, trivia_B_channelId, etc.
+  if (customId.startsWith("trivia_")) {
+    const parts = customId.split("_");
+    const answer = parts[1];
+    const channelId = parts[2];
+    if (answer && channelId) {
+      await triviaCommand.handleTriviaButton(interaction, answer, channelId);
+    }
+    return;
+  }
+
+  // Sign-up button
+  if (customId === "summer_signup") {
+    await handleSignupButton(interaction);
+    return;
+  }
+}
+
+async function handleSignupButton(interaction: ButtonInteraction): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
   const userId = interaction.user.id;
@@ -102,24 +137,15 @@ async function handleButton(client: Client, interaction: ButtonInteraction): Pro
   });
 
   try {
-    await updateSignupEmbed(interaction, signups.length, startsAt);
+    if (interaction.message?.embeds[0]) {
+      const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0]).spliceFields(1, 1, {
+        name: "👥 Early Sign-Ups",
+        value: `${signups.length} ${signups.length === 1 ? "person has" : "people have"} signed up so far!`,
+        inline: false,
+      });
+      await interaction.message.edit({ embeds: [updatedEmbed] });
+    }
   } catch {
     // non-critical
   }
-}
-
-async function updateSignupEmbed(
-  interaction: ButtonInteraction,
-  signupCount: number,
-  startsAt: Date | null,
-): Promise<void> {
-  if (!interaction.message || !interaction.message.embeds[0]) return;
-
-  const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0]).spliceFields(1, 1, {
-    name: "👥 Early Sign-Ups",
-    value: `${signupCount} ${signupCount === 1 ? "person has" : "people have"} signed up so far!`,
-    inline: false,
-  });
-
-  await interaction.message.edit({ embeds: [updatedEmbed] });
 }

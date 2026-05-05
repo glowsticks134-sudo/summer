@@ -9,6 +9,14 @@ import * as serverProgressCommand from "../commands/serverprogress";
 import * as countdownCommand from "../commands/countdown";
 import * as setEventStartCommand from "../commands/seteventstart";
 import * as postSignupCommand from "../commands/postsignup";
+import * as dailyCommand from "../commands/daily";
+import * as streakCommand from "../commands/streak";
+import * as weeklyCommand from "../commands/weekly";
+import * as eventInfoCommand from "../commands/eventinfo";
+import * as triviaCommand from "../commands/trivia";
+import * as adminAwardCommand from "../commands/adminaward";
+import * as giveawayCommand from "../commands/giveaway-cmd";
+import * as dropCommand from "../commands/drop-cmd";
 
 const commands = [
   rankCommand,
@@ -17,6 +25,14 @@ const commands = [
   countdownCommand,
   setEventStartCommand,
   postSignupCommand,
+  dailyCommand,
+  streakCommand,
+  weeklyCommand,
+  eventInfoCommand,
+  triviaCommand,
+  adminAwardCommand,
+  giveawayCommand,
+  dropCommand,
 ];
 
 export async function onReady(client: Client): Promise<void> {
