@@ -41,9 +41,14 @@ Manage Roles, Manage Channels, Manage Emojis, Send Messages, Read Message Histor
 - **Server Milestones**: 10 milestones based on cumulative server XP that unlock rewards
 
 ### Slash Commands
-- `/rank [user]` — shows personal XP, level, rank, and progress bar
-- `/leaderboard [page]` — top earners with medals
-- `/serverprogress` — full milestone tracker with progress bar
+| Command | Who | Description |
+|---|---|---|
+| `/rank [user]` | Everyone | Personal XP, level, rank, and progress bar |
+| `/leaderboard [page]` | Everyone | Top earners with gold/silver/bronze medals |
+| `/serverprogress` | Everyone | Full milestone tracker with server progress bar |
+| `/countdown` | Everyone | Shows time remaining until event starts |
+| `/seteventstart <datetime>` | Admins | Set the event start date (ISO format or "now") |
+| `/postsignup` | Admins | Post the early sign-up embed in the current channel |
 
 ### Milestones (Server Total XP)
 | XP | Reward |

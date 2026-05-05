@@ -1,0 +1,17 @@
+import { pgTable, integer, text, boolean, timestamp } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
+
+export const eventConfigTable = pgTable("event_config", {
+  id: integer("id").primaryKey().default(1),
+  startsAt: timestamp("starts_at"),
+  started: boolean("started").notNull().default(false),
+  announcementChannelId: text("announcement_channel_id"),
+  signupMessageId: text("signup_message_id"),
+  signupChannelId: text("signup_channel_id"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEventConfigSchema = createInsertSchema(eventConfigTable);
+export type InsertEventConfig = z.infer<typeof insertEventConfigSchema>;
+export type EventConfig = typeof eventConfigTable.$inferSelect;

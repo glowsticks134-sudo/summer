@@ -29,7 +29,7 @@ export function startBot(): void {
 
   client.on("messageCreate", (message) => onMessageCreate(client, message));
 
-  client.on("interactionCreate", (interaction) => onInteractionCreate(interaction));
+  client.on("interactionCreate", (interaction) => onInteractionCreate(client, interaction));
 
   client.on("error", (err) => {
     logger.error({ err }, "Discord client error");

@@ -1,8 +1,9 @@
 import { db } from "@workspace/db";
 import { xpUsersTable, serverXpTable } from "@workspace/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { GuildMember, Message } from "discord.js";
 import { logger } from "../lib/logger";
+import { isEventStarted } from "./eventScheduler";
 
 const XP_COOLDOWN_MS = 60_000;
 const XP_MIN = 15;
@@ -29,6 +30,9 @@ export async function awardXp(
   message: Message,
 ): Promise<{ xpGained: number; newLevel: number; leveledUp: boolean; totalXp: number } | null> {
   if (!message.guild || message.author.bot) return null;
+
+  const eventActive = await isEventStarted();
+  if (!eventActive) return null;
 
   const userId = message.author.id;
   const now = new Date();
