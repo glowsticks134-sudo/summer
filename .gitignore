@@ -47,3 +47,9 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Environment variables — never commit real secrets
+.env
+.env.local
+.env.*.local
+# .env.example is intentionally tracked (safe template with no real values)
