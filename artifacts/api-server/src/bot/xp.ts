@@ -5,12 +5,11 @@ import type { GuildMember, Message } from "discord.js";
 import { logger } from "../lib/logger";
 import { isEventStarted } from "./eventScheduler";
 
-const XP_COOLDOWN_MS = 60_000;
-const XP_MIN = 15;
-const XP_MAX = 25;
+const XP_COOLDOWN_MS = 30_000;
+const XP_PER_MESSAGE = 50;
 
 function randomXp(): number {
-  return Math.floor(Math.random() * (XP_MAX - XP_MIN + 1)) + XP_MIN;
+  return XP_PER_MESSAGE;
 }
 
 function xpForNextLevel(level: number): number {
