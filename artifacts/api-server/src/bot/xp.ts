@@ -1,9 +1,17 @@
 import { db } from "@workspace/db";
-import { xpUsersTable, serverXpTable } from "@workspace/db/schema";
+import { xpUsersTable, serverXpTable, eventConfigTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import type { GuildMember, Message } from "discord.js";
 import { logger } from "../lib/logger";
 import { isEventStarted } from "./eventScheduler";
+
+export async function getActiveMultiplier(): Promise<{ multiplier: number; label: string | null }> {
+  const rows = await db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1));
+  const config = rows[0];
+  if (!config || !config.xpMultiplier || config.xpMultiplier <= 1) return { multiplier: 1, label: null };
+  if (config.xpMultiplierExpiresAt && config.xpMultiplierExpiresAt < new Date()) return { multiplier: 1, label: null };
+  return { multiplier: config.xpMultiplier, label: config.xpMultiplierLabel ?? null };
+}
 
 const XP_COOLDOWN_MS = 60_000;
 const XP_MIN = 15;
@@ -50,7 +58,11 @@ export async function awardXp(
     if (elapsed < XP_COOLDOWN_MS) return null;
   }
 
-  const xpGained = randomXp();
+  const { multiplier, label: multiplierLabel } = await getActiveMultiplier();
+  const xpGained = Math.round(randomXp() * multiplier);
+  if (multiplierLabel && multiplier > 1) {
+    logger.debug({ userId, multiplier, multiplierLabel }, "XP multiplier applied");
+  }
   const prevXp = user?.xp ?? 0;
   const prevLevel = user?.level ?? 0;
   const newXp = prevXp + xpGained;

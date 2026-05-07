@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { serverXpTable, milestonesTable, eventConfigTable, xpUsersTable } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { MILESTONE_DEFS } from "./milestones";
+import { getActiveMultiplier } from "./xp";
 import { logger } from "../lib/logger";
 
 const UPDATE_INTERVAL_MS = 30_000;
@@ -16,10 +17,11 @@ function buildProgressBar(current: number, target: number, length = 20): string 
 }
 
 export async function buildLiveProgressEmbed(): Promise<EmbedBuilder> {
-  const [serverXpRows, milestoneRows, topUsers] = await Promise.all([
+  const [serverXpRows, milestoneRows, topUsers, activeMultiplier] = await Promise.all([
     db.select().from(serverXpTable).where(eq(serverXpTable.id, 1)),
     db.select().from(milestonesTable),
     db.select().from(xpUsersTable).orderBy(desc(xpUsersTable.xp)).limit(3),
+    getActiveMultiplier(),
   ]);
 
   const totalXp = serverXpRows[0]?.totalXp ?? 0;
@@ -70,10 +72,24 @@ export async function buildLiveProgressEmbed(): Promise<EmbedBuilder> {
   const now = new Date();
   const unixNow = Math.floor(now.getTime() / 1000);
 
+  // Multiplier banner
+  let multiplierLine = "";
+  if (activeMultiplier.multiplier > 1) {
+    const config = await db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1));
+    const expiresAt = config[0]?.xpMultiplierExpiresAt;
+    const expiresPart = expiresAt ? ` — ends <t:${Math.floor(expiresAt.getTime() / 1000)}:R>` : "";
+    multiplierLine = `⚡ **${activeMultiplier.multiplier}x XP MULTIPLIER ACTIVE** — ${activeMultiplier.label ?? "Bonus XP"}${expiresPart}`;
+    if (activeMultiplier.multiplier > 1) embedColor = 0xf97316;
+  }
+
+  const description = multiplierLine
+    ? `${multiplierLine}\n\n${progressBlock}`
+    : progressBlock;
+
   return new EmbedBuilder()
     .setTitle("☀️ 2026 Summer Break Event — Live Progress")
     .setColor(embedColor)
-    .setDescription(progressBlock)
+    .setDescription(description)
     .addFields(
       { name: "📋 Milestones (1–5)", value: col1, inline: true },
       { name: "📋 Milestones (6–10)", value: col2, inline: true },

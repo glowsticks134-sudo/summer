@@ -23,6 +23,10 @@ import * as pollCommand from "../commands/poll";
 import * as announceCommand from "../commands/announce";
 import * as setRewardCommand from "../commands/setreward";
 import * as postLiveProgressCommand from "../commands/postliveprogress";
+import * as setMultiplierCommand from "../commands/setmultiplier";
+import * as endMultiplierCommand from "../commands/endmultiplier";
+import * as spinCommand from "../commands/spin";
+import * as shoutoutCommand from "../commands/shoutout";
 import { startLiveProgressUpdater } from "../liveProgress";
 
 const commands = [
@@ -46,6 +50,10 @@ const commands = [
   announceCommand,
   setRewardCommand,
   postLiveProgressCommand,
+  setMultiplierCommand,
+  endMultiplierCommand,
+  spinCommand,
+  shoutoutCommand,
 ];
 
 export async function onReady(client: Client): Promise<void> {

@@ -54,6 +54,10 @@ Manage Roles, Manage Channels, Manage Emojis, Send Messages, Read Message Histor
 | `/setgoal <milestone> <xp>` | Admins | Change the XP goal for a milestone (1–10) |
 | `/setreward <milestone> [options]` | Admins | Change the reward config for a milestone |
 | `/postliveprogress [channel]` | Admins | Post the auto-updating live progress tracker embed |
+| `/setmultiplier <x> <minutes> [label]` | Admins | Activate a temporary XP multiplier (e.g. 2x for 60 min) |
+| `/endmultiplier` | Admins | Cancel the active XP multiplier early |
+| `/spin` | Everyone | 🎰 Daily lucky wheel spin for bonus XP (6 tiers) |
+| `/shoutout <user> [reason]` | Everyone | Give a member a public shoutout + 75 XP (1h cooldown) |
 | `/announce <title> <message>` | Admins | Post a formatted embed announcement as the bot |
 
 ### Milestones (Server Total XP)

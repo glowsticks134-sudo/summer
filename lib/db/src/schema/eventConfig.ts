@@ -1,4 +1,4 @@
-import { pgTable, integer, text, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, integer, text, boolean, timestamp, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -13,6 +13,9 @@ export const eventConfigTable = pgTable("event_config", {
   signupRoleName: text("signup_role_name"),
   liveProgressChannelId: text("live_progress_channel_id"),
   liveProgressMessageId: text("live_progress_message_id"),
+  xpMultiplier: real("xp_multiplier").notNull().default(1),
+  xpMultiplierExpiresAt: timestamp("xp_multiplier_expires_at"),
+  xpMultiplierLabel: text("xp_multiplier_label"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
