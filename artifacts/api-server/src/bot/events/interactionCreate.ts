@@ -22,6 +22,7 @@ import * as setSignupRoleCommand from "../commands/setsignuprole";
 import * as setGoalCommand from "../commands/setgoal";
 import * as pollCommand from "../commands/poll";
 import * as announceCommand from "../commands/announce";
+import * as setRewardCommand from "../commands/setreward";
 
 type SlashExecutor = (interaction: Parameters<typeof rankCommand.execute>[0], client: Client) => Promise<void>;
 
@@ -44,6 +45,7 @@ const commandMap = new Map<string, SlashExecutor>([
   [setGoalCommand.data.name, (i) => setGoalCommand.execute(i)],
   [pollCommand.data.name, (i) => pollCommand.execute(i)],
   [announceCommand.data.name, (i) => announceCommand.execute(i)],
+  [setRewardCommand.data.name, (i) => setRewardCommand.execute(i)],
 ]);
 
 export async function onInteractionCreate(client: Client, interaction: Interaction): Promise<void> {

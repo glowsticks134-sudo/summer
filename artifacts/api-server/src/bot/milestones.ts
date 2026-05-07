@@ -146,28 +146,39 @@ async function unlockMilestone(client: Client, guild: Guild, milestoneId: number
   const def = MILESTONE_DEFS.find((m) => m.id === milestoneId);
   if (!def) return;
 
+  const dbRows = await db.select().from(milestonesTable).where(eq(milestonesTable.id, milestoneId));
+  const dbRow = dbRows[0];
+
   await db
     .update(milestonesTable)
     .set({ unlocked: true, unlockedAt: new Date() })
     .where(eq(milestonesTable.id, milestoneId));
 
-  logger.info({ milestoneId, title: def.title }, "Milestone unlocked");
+  // Use DB values (which admins may have customised) with in-memory defs as fallback
+  const rewardType = (dbRow?.rewardType ?? def.rewardType) as MilestoneDef["rewardType"];
+  const rewardConfig = (dbRow?.rewardConfig ?? def.rewardConfig) as Record<string, unknown>;
+  const title = dbRow?.title ?? def.title;
+  const description = dbRow?.description ?? def.description;
+
+  const activeDef: MilestoneDef = { ...def, rewardType, rewardConfig, title, description };
+
+  logger.info({ milestoneId, title }, "Milestone unlocked");
 
   const announcementChannel = findChannel(guild, ["announcements", "general", "summer-lounge", "bot-log"]);
 
   try {
-    if (def.rewardType === "channel") {
-      await executeChannelReward(guild, def, announcementChannel);
-    } else if (def.rewardType === "role") {
-      await executeRoleReward(guild, def, announcementChannel);
-    } else if (def.rewardType === "giveaway") {
-      await executeGiveawayReward(client, guild, def, announcementChannel);
-    } else if (def.rewardType === "quickdrop") {
-      await executeQuickDropReward(client, guild, def, announcementChannel);
-    } else if (def.rewardType === "announcement") {
-      const cfg = def.rewardConfig as { message: string };
+    if (rewardType === "channel") {
+      await executeChannelReward(guild, activeDef, announcementChannel);
+    } else if (rewardType === "role") {
+      await executeRoleReward(guild, activeDef, announcementChannel);
+    } else if (rewardType === "giveaway") {
+      await executeGiveawayReward(client, guild, activeDef, announcementChannel);
+    } else if (rewardType === "quickdrop") {
+      await executeQuickDropReward(client, guild, activeDef, announcementChannel);
+    } else if (rewardType === "announcement") {
+      const cfg = rewardConfig as { message: string };
       if (announcementChannel) {
-        await announcementChannel.send(`🎊 **MILESTONE UNLOCKED: ${def.title}**\n\n${cfg.message}`);
+        await announcementChannel.send(`🎊 **MILESTONE UNLOCKED: ${title}**\n\n${cfg.message}`);
       }
     }
   } catch (err) {

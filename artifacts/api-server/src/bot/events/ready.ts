@@ -21,6 +21,7 @@ import * as setSignupRoleCommand from "../commands/setsignuprole";
 import * as setGoalCommand from "../commands/setgoal";
 import * as pollCommand from "../commands/poll";
 import * as announceCommand from "../commands/announce";
+import * as setRewardCommand from "../commands/setreward";
 
 const commands = [
   rankCommand,
@@ -41,6 +42,7 @@ const commands = [
   setGoalCommand,
   pollCommand,
   announceCommand,
+  setRewardCommand,
 ];
 
 export async function onReady(client: Client): Promise<void> {
