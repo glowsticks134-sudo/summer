@@ -23,6 +23,7 @@ import * as setGoalCommand from "../commands/setgoal";
 import * as pollCommand from "../commands/poll";
 import * as announceCommand from "../commands/announce";
 import * as setRewardCommand from "../commands/setreward";
+import * as postLiveProgressCommand from "../commands/postliveprogress";
 
 type SlashExecutor = (interaction: Parameters<typeof rankCommand.execute>[0], client: Client) => Promise<void>;
 
@@ -46,6 +47,7 @@ const commandMap = new Map<string, SlashExecutor>([
   [pollCommand.data.name, (i) => pollCommand.execute(i)],
   [announceCommand.data.name, (i) => announceCommand.execute(i)],
   [setRewardCommand.data.name, (i) => setRewardCommand.execute(i)],
+  [postLiveProgressCommand.data.name, (i) => postLiveProgressCommand.execute(i)],
 ]);
 
 export async function onInteractionCreate(client: Client, interaction: Interaction): Promise<void> {

@@ -22,6 +22,8 @@ import * as setGoalCommand from "../commands/setgoal";
 import * as pollCommand from "../commands/poll";
 import * as announceCommand from "../commands/announce";
 import * as setRewardCommand from "../commands/setreward";
+import * as postLiveProgressCommand from "../commands/postliveprogress";
+import { startLiveProgressUpdater } from "../liveProgress";
 
 const commands = [
   rankCommand,
@@ -43,6 +45,7 @@ const commands = [
   pollCommand,
   announceCommand,
   setRewardCommand,
+  postLiveProgressCommand,
 ];
 
 export async function onReady(client: Client): Promise<void> {
@@ -67,4 +70,5 @@ export async function onReady(client: Client): Promise<void> {
 
   await seedMilestones();
   await scheduleEventStart(client);
+  startLiveProgressUpdater(client);
 }

@@ -11,6 +11,8 @@ export const eventConfigTable = pgTable("event_config", {
   signupChannelId: text("signup_channel_id"),
   signupRoleId: text("signup_role_id"),
   signupRoleName: text("signup_role_name"),
+  liveProgressChannelId: text("live_progress_channel_id"),
+  liveProgressMessageId: text("live_progress_message_id"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
