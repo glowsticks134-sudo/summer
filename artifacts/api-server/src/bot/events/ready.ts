@@ -17,6 +17,10 @@ import * as triviaCommand from "../commands/trivia";
 import * as adminAwardCommand from "../commands/adminaward";
 import * as giveawayCommand from "../commands/giveaway-cmd";
 import * as dropCommand from "../commands/drop-cmd";
+import * as setSignupRoleCommand from "../commands/setsignuprole";
+import * as setGoalCommand from "../commands/setgoal";
+import * as pollCommand from "../commands/poll";
+import * as announceCommand from "../commands/announce";
 
 const commands = [
   rankCommand,
@@ -33,6 +37,10 @@ const commands = [
   adminAwardCommand,
   giveawayCommand,
   dropCommand,
+  setSignupRoleCommand,
+  setGoalCommand,
+  pollCommand,
+  announceCommand,
 ];
 
 export async function onReady(client: Client): Promise<void> {

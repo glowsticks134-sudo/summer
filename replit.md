@@ -47,8 +47,12 @@ Manage Roles, Manage Channels, Manage Emojis, Send Messages, Read Message Histor
 | `/leaderboard [page]` | Everyone | Top earners with gold/silver/bronze medals |
 | `/serverprogress` | Everyone | Full milestone tracker with server progress bar |
 | `/countdown` | Everyone | Shows time remaining until event starts |
+| `/poll <question> <a> <b> [c] [d]` | Everyone | Create a reaction poll with up to 4 options |
 | `/seteventstart <datetime>` | Admins | Set the event start date (ISO format or "now") |
 | `/postsignup` | Admins | Post the early sign-up embed in the current channel |
+| `/setsignuprole [role]` | Admins | Set which role is auto-assigned on sign-up |
+| `/setgoal <milestone> <xp>` | Admins | Change the XP goal for a milestone (1–10) |
+| `/announce <title> <message>` | Admins | Post a formatted embed announcement as the bot |
 
 ### Milestones (Server Total XP)
 | XP | Reward |
