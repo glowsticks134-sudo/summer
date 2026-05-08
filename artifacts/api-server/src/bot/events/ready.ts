@@ -76,14 +76,17 @@ export async function onReady(client: Client): Promise<void> {
       logger.error({ err }, "Failed to register global slash commands");
     }
 
-    // Also register guild commands instantly if DISCORD_GUILD_ID is set
-    const guildId = process.env["DISCORD_GUILD_ID"];
-    if (guildId) {
-      try {
-        await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commandData });
-        logger.info({ guildId, count: commandData.length }, "Guild slash commands registered (instant)");
-      } catch (err) {
-        logger.warn({ err, guildId }, "Failed to register guild slash commands");
+    // Also register guild commands instantly for all guild IDs in DISCORD_GUILD_ID (comma-separated)
+    const guildIdEnv = process.env["DISCORD_GUILD_ID"];
+    if (guildIdEnv) {
+      const guildIds = guildIdEnv.split(",").map((id) => id.trim()).filter(Boolean);
+      for (const guildId of guildIds) {
+        try {
+          await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commandData });
+          logger.info({ guildId, count: commandData.length }, "Guild slash commands registered (instant)");
+        } catch (err) {
+          logger.warn({ err, guildId }, "Failed to register guild slash commands");
+        }
       }
     }
   }
