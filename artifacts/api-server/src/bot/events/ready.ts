@@ -68,26 +68,28 @@ export async function onReady(client: Client): Promise<void> {
     const rest = new REST({ version: "10" }).setToken(token);
     const commandData = commands.map((c) => c.data.toJSON());
 
+    // Clear global commands to avoid duplicates with guild-specific commands
     try {
-      // Always register as global commands (works in all servers)
-      await rest.put(Routes.applicationCommands(clientId), { body: commandData });
-      logger.info({ count: commandData.length }, "Global slash commands registered");
+      await rest.put(Routes.applicationCommands(clientId), { body: [] });
+      logger.info("Global slash commands cleared");
     } catch (err) {
-      logger.error({ err }, "Failed to register global slash commands");
+      logger.warn({ err }, "Failed to clear global slash commands");
     }
 
-    // Also register guild commands instantly for all guild IDs in DISCORD_GUILD_ID (comma-separated)
+    // Register commands per-guild only (instant, no duplicates)
     const guildIdEnv = process.env["DISCORD_GUILD_ID"];
     if (guildIdEnv) {
       const guildIds = guildIdEnv.split(",").map((id) => id.trim()).filter(Boolean);
       for (const guildId of guildIds) {
         try {
           await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commandData });
-          logger.info({ guildId, count: commandData.length }, "Guild slash commands registered (instant)");
+          logger.info({ guildId, count: commandData.length }, "Guild slash commands registered");
         } catch (err) {
           logger.warn({ err, guildId }, "Failed to register guild slash commands");
         }
       }
+    } else {
+      logger.warn("DISCORD_GUILD_ID not set — slash commands not registered in any guild");
     }
   }
 
