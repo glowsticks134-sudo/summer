@@ -7,6 +7,11 @@ import { seedMilestones } from "./milestones";
 import { scheduleEventStart } from "./eventScheduler";
 
 export function startBot(): void {
+  if (process.env["DISCORD_BOT_ENABLED"] === "false") {
+    logger.info("DISCORD_BOT_ENABLED=false — Discord bot is disabled in this environment.");
+    return;
+  }
+
   const token = process.env["DISCORD_BOT_TOKEN"];
 
   if (!token) {
