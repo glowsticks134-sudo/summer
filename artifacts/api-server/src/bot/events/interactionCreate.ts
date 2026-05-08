@@ -112,9 +112,7 @@ export async function onInteractionCreate(client: Client, interaction: Interacti
     await handler(interaction, client);
   } catch (err) {
     logger.error({ err, command: interaction.commandName }, "Error handling slash command");
-    const errMsg = isOwner(interaction.user.id)
-      ? `❌ **Error in \`/${interaction.commandName}\`:**\n\`\`\`${err instanceof Error ? err.message : String(err)}\`\`\``
-      : "An error occurred. Please try again.";
+    const errMsg = `❌ **Error in \`/${interaction.commandName}\`:**\n\`\`\`${err instanceof Error ? err.message : String(err)}\`\`\``;
     const msg = { content: errMsg, ephemeral: true };
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp(msg);
