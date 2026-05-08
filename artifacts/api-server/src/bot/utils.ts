@@ -2,10 +2,13 @@ import { EmbedBuilder, type ChatInputCommandInteraction } from "discord.js";
 import { isEventStarted, getEventConfig, formatCountdown } from "./eventScheduler";
 
 export async function replyIfNotStarted(interaction: ChatInputCommandInteraction): Promise<boolean> {
-  const started = await isEventStarted();
+  const guildId = interaction.guildId;
+  if (!guildId) return false;
+
+  const started = await isEventStarted(guildId);
   if (started) return false;
 
-  const config = await getEventConfig();
+  const config = await getEventConfig(guildId);
   const startsAt = config?.startsAt;
   const unixTs = startsAt ? Math.floor(startsAt.getTime() / 1000) : null;
   const msLeft = startsAt ? startsAt.getTime() - Date.now() : null;
@@ -29,6 +32,9 @@ export async function replyIfNotStarted(interaction: ChatInputCommandInteraction
   } else {
     await interaction.reply({ embeds: [embed], ephemeral: true });
   }
-
   return true;
+}
+
+export function requireGuildId(interaction: ChatInputCommandInteraction): string | null {
+  return interaction.guildId ?? null;
 }

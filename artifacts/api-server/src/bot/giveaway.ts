@@ -17,6 +17,7 @@ export async function startGiveaway(
   client: Client,
   channel: TextChannel,
   opts: GiveawayOptions,
+  guildId: string,
 ): Promise<void> {
   const endsAt = new Date(Date.now() + opts.durationMs);
   const minutes = Math.round(opts.durationMs / 60_000);
@@ -30,6 +31,7 @@ export async function startGiveaway(
   const [inserted] = await db
     .insert(giveawaysTable)
     .values({
+      guildId,
       messageId: giveawayMsg.id,
       channelId: channel.id,
       prize: opts.prize,
@@ -41,25 +43,20 @@ export async function startGiveaway(
     })
     .returning();
 
-  logger.info({ giveawayId: inserted.id, prize: opts.prize, endsAt }, "Giveaway started");
-
+  logger.info({ giveawayId: inserted.id, prize: opts.prize, endsAt, guildId }, "Giveaway started");
   setTimeout(() => endGiveaway(client, inserted.id), opts.durationMs);
 }
 
 async function endGiveaway(client: Client, giveawayDbId: number): Promise<void> {
-  const rows = await db
-    .select()
-    .from(giveawaysTable)
-    .where(eq(giveawaysTable.id, giveawayDbId));
-
+  const rows = await db.select().from(giveawaysTable).where(eq(giveawaysTable.id, giveawayDbId));
   const giveaway = rows[0];
   if (!giveaway || giveaway.ended) return;
 
   try {
     const channel = (await client.channels.fetch(giveaway.channelId)) as TextChannel;
     const message = (await channel.messages.fetch(giveaway.messageId!)) as Message;
-
     const reaction = message.reactions.cache.get(GIVEAWAY_EMOJI);
+
     if (!reaction) {
       await channel.send(`❌ Giveaway for **${giveaway.prize}** ended — no valid entries.`);
       await db.update(giveawaysTable).set({ ended: true }).where(eq(giveawaysTable.id, giveawayDbId));
@@ -80,14 +77,8 @@ async function endGiveaway(client: Client, giveawayDbId: number): Promise<void> 
     const winnerIds = winners.map((w) => w.id);
     const winnerMentions = winners.map((w) => `<@${w.id}>`).join(", ");
 
-    await channel.send(
-      `🎉 **GIVEAWAY ENDED!**\n\n**Prize:** ${giveaway.prize}\n🏆 **Winner${winners.length > 1 ? "s" : ""}:** ${winnerMentions}\n\nCongratulations! 🎊`,
-    );
-
-    await db
-      .update(giveawaysTable)
-      .set({ ended: true, winnerIds })
-      .where(eq(giveawaysTable.id, giveawayDbId));
+    await channel.send(`🎉 **GIVEAWAY ENDED!**\n\n**Prize:** ${giveaway.prize}\n🏆 **Winner${winners.length > 1 ? "s" : ""}:** ${winnerMentions}\n\nCongratulations! 🎊`);
+    await db.update(giveawaysTable).set({ ended: true, winnerIds }).where(eq(giveawaysTable.id, giveawayDbId));
 
     logger.info({ giveawayId: giveawayDbId, winnerIds }, "Giveaway ended");
   } catch (err) {

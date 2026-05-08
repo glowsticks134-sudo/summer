@@ -1,9 +1,10 @@
-import { pgTable, text, integer, timestamp, bigint } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, bigint, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const xpUsersTable = pgTable("xp_users", {
-  userId: text("user_id").primaryKey(),
+  guildId: text("guild_id").notNull(),
+  userId: text("user_id").notNull(),
   username: text("username").notNull(),
   displayName: text("display_name").notNull(),
   xp: integer("xp").notNull().default(0),
@@ -17,10 +18,12 @@ export const xpUsersTable = pgTable("xp_users", {
   weekStartAt: timestamp("week_start_at"),
   lastSpinAt: timestamp("last_spin_at"),
   lastShoutoutAt: timestamp("last_shoutout_at"),
-});
+}, (table) => [
+  primaryKey({ columns: [table.guildId, table.userId] }),
+]);
 
 export const serverXpTable = pgTable("server_xp", {
-  id: integer("id").primaryKey().default(1),
+  guildId: text("guild_id").primaryKey(),
   totalXp: bigint("total_xp", { mode: "number" }).notNull().default(0),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

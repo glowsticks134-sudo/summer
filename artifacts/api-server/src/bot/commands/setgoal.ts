@@ -6,7 +6,7 @@ import {
 } from "discord.js";
 import { db } from "@workspace/db";
 import { milestonesTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { MILESTONE_DEFS } from "../milestones";
 import { logger } from "../../lib/logger";
 
@@ -34,6 +34,9 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
   const milestoneId = interaction.options.getInteger("milestone", true);
   const newXp = interaction.options.getInteger("xp", true);
 
@@ -43,10 +46,12 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     return;
   }
 
-  const existing = await db.select().from(milestonesTable).where(eq(milestonesTable.id, milestoneId));
+  const existing = await db.select().from(milestonesTable)
+    .where(and(eq(milestonesTable.guildId, guildId), eq(milestonesTable.id, milestoneId)));
 
   if (existing.length === 0) {
     await db.insert(milestonesTable).values({
+      guildId,
       id: milestoneId,
       xpRequired: newXp,
       title: def.title,
@@ -58,10 +63,10 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   } else {
     await db.update(milestonesTable)
       .set({ xpRequired: newXp })
-      .where(eq(milestonesTable.id, milestoneId));
+      .where(and(eq(milestonesTable.guildId, guildId), eq(milestonesTable.id, milestoneId)));
   }
 
-  logger.info({ milestoneId, newXp }, "Milestone XP goal updated by admin");
+  logger.info({ guildId, milestoneId, newXp }, "Milestone XP goal updated by admin");
 
   const wasUnlocked = existing[0]?.unlocked ?? false;
 

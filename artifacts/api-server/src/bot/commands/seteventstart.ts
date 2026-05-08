@@ -5,10 +5,7 @@ import {
   type ChatInputCommandInteraction,
   type Client,
 } from "discord.js";
-import { db } from "@workspace/db";
-import { eventConfigTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
-import { scheduleEventStart, formatCountdown } from "../eventScheduler";
+import { upsertEventConfig, scheduleEventStart, formatCountdown } from "../eventScheduler";
 import { logger } from "../../lib/logger";
 
 export const data = new SlashCommandBuilder()
@@ -31,6 +28,9 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction, client: Client): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
   const input = interaction.options.getString("datetime", true).trim();
   const channelInput = interaction.options.getString("channel");
 
@@ -47,33 +47,17 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
 
   let announcementChannelId: string | null = null;
   if (channelInput && interaction.guild) {
-    const found =
-      interaction.guild.channels.cache.find(
-        (c) => c.id === channelInput || c.name === channelInput.replace("#", ""),
-      );
+    const found = interaction.guild.channels.cache.find(
+      (c) => c.id === channelInput || c.name === channelInput.replace("#", ""),
+    );
     announcementChannelId = found?.id ?? null;
   }
   if (!announcementChannelId && interaction.channelId) {
     announcementChannelId = interaction.channelId;
   }
 
-  const existing = await db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1));
-  if (existing.length === 0) {
-    await db.insert(eventConfigTable).values({
-      id: 1,
-      startsAt,
-      started: false,
-      announcementChannelId,
-      updatedAt: new Date(),
-    });
-  } else {
-    await db
-      .update(eventConfigTable)
-      .set({ startsAt, started: false, announcementChannelId, updatedAt: new Date() })
-      .where(eq(eventConfigTable.id, 1));
-  }
-
-  await scheduleEventStart(client);
+  await upsertEventConfig(guildId, { startsAt, started: false, announcementChannelId });
+  await scheduleEventStart(client, guildId);
 
   const msUntil = startsAt.getTime() - Date.now();
   const countdown = msUntil > 0 ? formatCountdown(msUntil) : "starting now";
@@ -88,6 +72,6 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
     )
     .setFooter({ text: "2026 Summer Break Event" });
 
-  logger.info({ startsAt, announcementChannelId }, "Event start time configured");
+  logger.info({ guildId, startsAt, announcementChannelId }, "Event start time configured");
   await interaction.editReply({ embeds: [embed] });
 }

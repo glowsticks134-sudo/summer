@@ -6,9 +6,6 @@ import { checkMilestones } from "../milestones";
 export async function onMessageCreate(client: Client, message: Message): Promise<void> {
   if (message.author.bot || !message.guild) return;
 
-  const guildId = process.env["DISCORD_GUILD_ID"];
-  if (guildId && message.guild.id !== guildId) return;
-
   try {
     const result = await awardXp(message);
     if (!result) return;

@@ -6,7 +6,7 @@ import {
 } from "discord.js";
 import { db } from "@workspace/db";
 import { xpUsersTable, serverXpTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { levelFromXp } from "../xp";
 import { logger } from "../../lib/logger";
 import { replyIfNotStarted } from "../utils";
@@ -29,12 +29,16 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   await interaction.deferReply({ ephemeral: true });
   if (await replyIfNotStarted(interaction)) return;
 
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
   const target = interaction.options.getUser("user", true);
   const amount = interaction.options.getInteger("amount", true);
   const reason = interaction.options.getString("reason") ?? "Admin award";
 
   const now = new Date();
-  const rows = await db.select().from(xpUsersTable).where(eq(xpUsersTable.userId, target.id));
+  const rows = await db.select().from(xpUsersTable)
+    .where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, target.id)));
   const user = rows[0];
   const prevXp = user?.xp ?? 0;
   const newXp = prevXp + amount;
@@ -46,6 +50,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   if (!user) {
     await db.insert(xpUsersTable).values({
+      guildId,
       userId: target.id,
       username: target.username,
       displayName,
@@ -61,18 +66,18 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       level: newLevel,
       weeklyXp: (user.weeklyXp ?? 0) + amount,
       displayName,
-    }).where(eq(xpUsersTable.userId, target.id));
+    }).where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, target.id)));
   }
 
-  const serverRows = await db.select().from(serverXpTable).where(eq(serverXpTable.id, 1));
+  const serverRows = await db.select().from(serverXpTable).where(eq(serverXpTable.guildId, guildId));
   const newServerXp = (serverRows[0]?.totalXp ?? 0) + amount;
   if (serverRows.length === 0) {
-    await db.insert(serverXpTable).values({ id: 1, totalXp: newServerXp, updatedAt: now });
+    await db.insert(serverXpTable).values({ guildId, totalXp: newServerXp, updatedAt: now });
   } else {
-    await db.update(serverXpTable).set({ totalXp: newServerXp, updatedAt: now }).where(eq(serverXpTable.id, 1));
+    await db.update(serverXpTable).set({ totalXp: newServerXp, updatedAt: now }).where(eq(serverXpTable.guildId, guildId));
   }
 
-  logger.info({ adminId: interaction.user.id, targetId: target.id, amount, reason }, "Admin XP award");
+  logger.info({ guildId, adminId: interaction.user.id, targetId: target.id, amount, reason }, "Admin XP award");
 
   await interaction.editReply({
     embeds: [

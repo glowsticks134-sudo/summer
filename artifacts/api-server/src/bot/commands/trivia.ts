@@ -4,13 +4,13 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  PermissionFlagsBits,
   type ChatInputCommandInteraction,
   type ButtonInteraction,
-  PermissionFlagsBits,
 } from "discord.js";
 import { db } from "@workspace/db";
 import { xpUsersTable, serverXpTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { isEventStarted } from "../eventScheduler";
 import { levelFromXp } from "../xp";
 import { logger } from "../../lib/logger";
@@ -43,7 +43,7 @@ const QUESTIONS: TriviaQuestion[] = [
   { question: "What sport is traditionally played on the beach with a net?", options: ["Volleyball", "Tennis", "Badminton", "Handball"], correct: "A", emoji: "🏐" },
 ];
 
-export const activeSessions = new Map<string, { correct: string; timeout: ReturnType<typeof setTimeout> }>();
+export const activeSessions = new Map<string, { correct: string; timeout: ReturnType<typeof setTimeout>; guildId: string }>();
 
 export const data = new SlashCommandBuilder()
   .setName("trivia")
@@ -53,7 +53,10 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply();
 
-  const started = await isEventStarted();
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
+  const started = await isEventStarted(guildId);
   if (!started) {
     await interaction.editReply("⏳ The event hasn't started yet — trivia is only available during the event!");
     return;
@@ -91,7 +94,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     ),
   );
 
-  const msg = await interaction.editReply({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row] });
 
   const timeout = setTimeout(async () => {
     activeSessions.delete(channelId);
@@ -113,8 +116,8 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     await interaction.editReply({ embeds: [expiredEmbed], components: [disabledRow] }).catch(() => {});
   }, TRIVIA_DURATION_MS);
 
-  activeSessions.set(channelId, { correct: q.correct, timeout });
-  logger.info({ channelId, correct: q.correct }, "Trivia started");
+  activeSessions.set(channelId, { correct: q.correct, timeout, guildId });
+  logger.info({ guildId, channelId, correct: q.correct }, "Trivia started");
 }
 
 export async function handleTriviaButton(
@@ -145,10 +148,12 @@ export async function handleTriviaButton(
   clearTimeout(session.timeout);
   activeSessions.delete(channelId);
 
+  const guildId = session.guildId;
   const userId = interaction.user.id;
   const now = new Date();
 
-  const rows = await db.select().from(xpUsersTable).where(eq(xpUsersTable.userId, userId));
+  const rows = await db.select().from(xpUsersTable)
+    .where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, userId)));
   const user = rows[0];
   const prevXp = user?.xp ?? 0;
   const newXp = prevXp + TRIVIA_XP;
@@ -158,6 +163,7 @@ export async function handleTriviaButton(
 
   if (!user) {
     await db.insert(xpUsersTable).values({
+      guildId,
       userId,
       username: interaction.user.username,
       displayName,
@@ -173,32 +179,18 @@ export async function handleTriviaButton(
       level: newLevel,
       weeklyXp: (user.weeklyXp ?? 0) + TRIVIA_XP,
       displayName,
-    }).where(eq(xpUsersTable.userId, userId));
+    }).where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, userId)));
   }
 
-  const serverRows = await db.select().from(serverXpTable).where(eq(serverXpTable.id, 1));
+  const serverRows = await db.select().from(serverXpTable).where(eq(serverXpTable.guildId, guildId));
   const newServerXp = (serverRows[0]?.totalXp ?? 0) + TRIVIA_XP;
   if (serverRows.length === 0) {
-    await db.insert(serverXpTable).values({ id: 1, totalXp: newServerXp, updatedAt: now });
+    await db.insert(serverXpTable).values({ guildId, totalXp: newServerXp, updatedAt: now });
   } else {
-    await db.update(serverXpTable).set({ totalXp: newServerXp, updatedAt: now }).where(eq(serverXpTable.id, 1));
+    await db.update(serverXpTable).set({ totalXp: newServerXp, updatedAt: now }).where(eq(serverXpTable.guildId, guildId));
   }
 
-  logger.info({ userId, answer, xpGained: TRIVIA_XP }, "Trivia answered correctly");
-
-  const optionLabels = ["A", "B", "C", "D"] as const;
-  const disabledRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    optionLabels.map((label, i) => {
-      const btn = new ButtonBuilder()
-        .setCustomId(`trivia_${label}_done`)
-        .setStyle(label === answer ? ButtonStyle.Success : ButtonStyle.Secondary)
-        .setDisabled(true);
-      const questions = QUESTIONS;
-      const currentQ = questions.find(() => true);
-      btn.setLabel(label);
-      return btn;
-    }),
-  );
+  logger.info({ guildId, userId, answer, xpGained: TRIVIA_XP }, "Trivia answered correctly");
 
   await interaction.update({
     embeds: [

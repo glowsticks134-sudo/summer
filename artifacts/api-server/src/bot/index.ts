@@ -3,6 +3,8 @@ import { logger } from "../lib/logger";
 import { onReady } from "./events/ready";
 import { onMessageCreate } from "./events/messageCreate";
 import { onInteractionCreate } from "./events/interactionCreate";
+import { seedMilestones } from "./milestones";
+import { scheduleEventStart } from "./eventScheduler";
 
 export function startBot(): void {
   const token = process.env["DISCORD_BOT_TOKEN"];
@@ -30,6 +32,17 @@ export function startBot(): void {
   client.on("messageCreate", (message) => onMessageCreate(client, message));
 
   client.on("interactionCreate", (interaction) => onInteractionCreate(client, interaction));
+
+  // Seed milestones and schedule event start when the bot joins a new server
+  client.on("guildCreate", async (guild) => {
+    logger.info({ guildId: guild.id, guildName: guild.name }, "Bot joined a new server");
+    try {
+      await seedMilestones(guild.id);
+      await scheduleEventStart(client, guild.id);
+    } catch (err) {
+      logger.error({ err, guildId: guild.id }, "Error during setup for new guild");
+    }
+  });
 
   client.on("error", (err) => {
     logger.error({ err }, "Discord client error");

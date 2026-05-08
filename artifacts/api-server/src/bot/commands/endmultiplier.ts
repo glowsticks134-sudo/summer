@@ -4,9 +4,7 @@ import {
   PermissionFlagsBits,
   type ChatInputCommandInteraction,
 } from "discord.js";
-import { db } from "@workspace/db";
-import { eventConfigTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { getEventConfig, upsertEventConfig } from "../eventScheduler";
 import { logger } from "../../lib/logger";
 
 export const data = new SlashCommandBuilder()
@@ -17,9 +15,10 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
-  const rows = await db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1));
-  const config = rows[0];
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
 
+  const config = await getEventConfig(guildId);
   const isActive = config && config.xpMultiplier > 1 &&
     (!config.xpMultiplierExpiresAt || config.xpMultiplierExpiresAt > new Date());
 
@@ -29,15 +28,9 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   }
 
   const label = config.xpMultiplierLabel ?? "XP Multiplier";
+  await upsertEventConfig(guildId, { xpMultiplier: 1, xpMultiplierExpiresAt: null, xpMultiplierLabel: null });
 
-  await db.update(eventConfigTable).set({
-    xpMultiplier: 1,
-    xpMultiplierExpiresAt: null,
-    xpMultiplierLabel: null,
-    updatedAt: new Date(),
-  }).where(eq(eventConfigTable.id, 1));
-
-  logger.info({ label }, "XP multiplier cancelled early by admin");
+  logger.info({ guildId, label }, "XP multiplier cancelled early by admin");
 
   await interaction.editReply({
     embeds: [

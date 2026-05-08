@@ -1,7 +1,7 @@
 import { EmbedBuilder, type Client, type TextChannel } from "discord.js";
 import { db } from "@workspace/db";
 import { serverXpTable, milestonesTable, eventConfigTable, xpUsersTable } from "@workspace/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { MILESTONE_DEFS } from "./milestones";
 import { getActiveMultiplier } from "./xp";
 import { logger } from "../lib/logger";
@@ -12,27 +12,25 @@ let updaterInterval: ReturnType<typeof setInterval> | null = null;
 function buildProgressBar(current: number, target: number, length = 20): string {
   const pct = Math.min(1, current / target);
   const filled = Math.round(pct * length);
-  const empty = length - filled;
-  return "█".repeat(filled) + "░".repeat(empty);
+  return "█".repeat(filled) + "░".repeat(length - filled);
 }
 
-export async function buildLiveProgressEmbed(): Promise<EmbedBuilder> {
+export async function buildLiveProgressEmbed(guildId: string): Promise<EmbedBuilder> {
   const [serverXpRows, milestoneRows, topUsers, activeMultiplier] = await Promise.all([
-    db.select().from(serverXpTable).where(eq(serverXpTable.id, 1)),
-    db.select().from(milestonesTable),
-    db.select().from(xpUsersTable).orderBy(desc(xpUsersTable.xp)).limit(3),
-    getActiveMultiplier(),
+    db.select().from(serverXpTable).where(eq(serverXpTable.guildId, guildId)),
+    db.select().from(milestonesTable).where(eq(milestonesTable.guildId, guildId)),
+    db.select().from(xpUsersTable).where(eq(xpUsersTable.guildId, guildId)).orderBy(desc(xpUsersTable.xp)).limit(3),
+    getActiveMultiplier(guildId),
   ]);
 
   const totalXp = serverXpRows[0]?.totalXp ?? 0;
   const milestoneMap = new Map(milestoneRows.map((m) => [m.id, m]));
-
   const unlockedCount = milestoneRows.filter((m) => m.unlocked).length;
   const nextMilestoneDef = MILESTONE_DEFS.find((m) => !(milestoneMap.get(m.id)?.unlocked));
 
-  // Progress bar toward next milestone
   let progressBlock = "";
   let embedColor = 0xfbbf24;
+
   if (nextMilestoneDef) {
     const xpNeeded = Math.max(0, nextMilestoneDef.xpRequired - totalXp);
     const pct = Math.min(100, Math.round((totalXp / nextMilestoneDef.xpRequired) * 100));
@@ -41,8 +39,6 @@ export async function buildLiveProgressEmbed(): Promise<EmbedBuilder> {
       `**Next:** ${nextMilestoneDef.title}\n` +
       `\`${bar}\` **${pct}%**\n` +
       `⭐ **${totalXp.toLocaleString()}** / ${nextMilestoneDef.xpRequired.toLocaleString()} XP  ·  ${xpNeeded.toLocaleString()} to go`;
-
-    // Color shifts from gold → green as progress climbs
     if (pct >= 75) embedColor = 0x22c55e;
     else if (pct >= 40) embedColor = 0x84cc16;
   } else {
@@ -50,7 +46,6 @@ export async function buildLiveProgressEmbed(): Promise<EmbedBuilder> {
     embedColor = 0xeab308;
   }
 
-  // Milestone list — split into two columns if all 10
   const milestoneLines = MILESTONE_DEFS.map((def) => {
     const dbRow = milestoneMap.get(def.id);
     const xpGoal = dbRow?.xpRequired ?? def.xpRequired;
@@ -63,7 +58,6 @@ export async function buildLiveProgressEmbed(): Promise<EmbedBuilder> {
   const col1 = milestoneLines.slice(0, half).join("\n");
   const col2 = milestoneLines.slice(half).join("\n");
 
-  // Top 3 leaderboard
   const medals = ["🥇", "🥈", "🥉"];
   const topLine = topUsers.length > 0
     ? topUsers.map((u, i) => `${medals[i]} **${u.displayName}** — ${u.xp.toLocaleString()} XP`).join("\n")
@@ -72,19 +66,17 @@ export async function buildLiveProgressEmbed(): Promise<EmbedBuilder> {
   const now = new Date();
   const unixNow = Math.floor(now.getTime() / 1000);
 
-  // Multiplier banner
+  if (activeMultiplier.multiplier > 1) embedColor = 0xf97316;
+
   let multiplierLine = "";
   if (activeMultiplier.multiplier > 1) {
-    const config = await db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1));
+    const config = await db.select().from(eventConfigTable).where(eq(eventConfigTable.guildId, guildId));
     const expiresAt = config[0]?.xpMultiplierExpiresAt;
     const expiresPart = expiresAt ? ` — ends <t:${Math.floor(expiresAt.getTime() / 1000)}:R>` : "";
     multiplierLine = `⚡ **${activeMultiplier.multiplier}x XP MULTIPLIER ACTIVE** — ${activeMultiplier.label ?? "Bonus XP"}${expiresPart}`;
-    if (activeMultiplier.multiplier > 1) embedColor = 0xf97316;
   }
 
-  const description = multiplierLine
-    ? `${multiplierLine}\n\n${progressBlock}`
-    : progressBlock;
+  const description = multiplierLine ? `${multiplierLine}\n\n${progressBlock}` : progressBlock;
 
   return new EmbedBuilder()
     .setTitle("☀️ 2026 Summer Break Event — Live Progress")
@@ -97,9 +89,7 @@ export async function buildLiveProgressEmbed(): Promise<EmbedBuilder> {
       { name: "🏆 Top 3 Earners", value: topLine, inline: false },
       {
         name: "📊 Event Stats",
-        value:
-          `✅ **${unlockedCount} / ${MILESTONE_DEFS.length}** milestones unlocked\n` +
-          `⭐ **${totalXp.toLocaleString()}** total server XP`,
+        value: `✅ **${unlockedCount} / ${MILESTONE_DEFS.length}** milestones unlocked\n⭐ **${totalXp.toLocaleString()}** total server XP`,
         inline: true,
       },
       { name: "🔄 Last Updated", value: `<t:${unixNow}:T>`, inline: true },
@@ -109,36 +99,28 @@ export async function buildLiveProgressEmbed(): Promise<EmbedBuilder> {
 }
 
 async function tick(client: Client): Promise<void> {
-  const configRows = await db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1));
-  const config = configRows[0];
-  if (!config?.liveProgressChannelId || !config.liveProgressMessageId) return;
-
-  const guildId = process.env["DISCORD_GUILD_ID"];
-  if (!guildId) return;
-
-  const guild = client.guilds.cache.get(guildId);
-  if (!guild) return;
-
-  const channel = guild.channels.cache.get(config.liveProgressChannelId) as TextChannel | undefined;
-  if (!channel) return;
-
-  try {
-    const message = await channel.messages.fetch(config.liveProgressMessageId);
-    const embed = await buildLiveProgressEmbed();
-    await message.edit({ embeds: [embed] });
-  } catch (err) {
-    logger.warn({ err }, "Live progress embed update failed — message may have been deleted");
+  const allConfigs = await db.select().from(eventConfigTable);
+  for (const config of allConfigs) {
+    if (!config.liveProgressChannelId || !config.liveProgressMessageId) continue;
+    const guild = client.guilds.cache.get(config.guildId);
+    if (!guild) continue;
+    const channel = guild.channels.cache.get(config.liveProgressChannelId) as TextChannel | undefined;
+    if (!channel) continue;
+    try {
+      const message = await channel.messages.fetch(config.liveProgressMessageId);
+      const embed = await buildLiveProgressEmbed(config.guildId);
+      await message.edit({ embeds: [embed] });
+    } catch (err) {
+      logger.warn({ err, guildId: config.guildId }, "Live progress embed update failed");
+    }
   }
 }
 
 export function startLiveProgressUpdater(client: Client): void {
-  if (updaterInterval) {
-    clearInterval(updaterInterval);
-  }
+  if (updaterInterval) clearInterval(updaterInterval);
   updaterInterval = setInterval(() => {
     tick(client).catch((err) => logger.error({ err }, "Live progress tick error"));
   }, UPDATE_INTERVAL_MS);
-
   logger.info({ intervalMs: UPDATE_INTERVAL_MS }, "Live progress updater started");
 }
 

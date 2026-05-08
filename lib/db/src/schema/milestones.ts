@@ -1,9 +1,10 @@
-import { pgTable, text, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, jsonb, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const milestonesTable = pgTable("milestones", {
-  id: integer("id").primaryKey(),
+  guildId: text("guild_id").notNull(),
+  id: integer("id").notNull(),
   xpRequired: integer("xp_required").notNull(),
   title: text("title").notNull(),
   description: text("description").notNull(),
@@ -11,7 +12,9 @@ export const milestonesTable = pgTable("milestones", {
   rewardConfig: jsonb("reward_config").notNull(),
   unlocked: boolean("unlocked").notNull().default(false),
   unlockedAt: timestamp("unlocked_at"),
-});
+}, (table) => [
+  primaryKey({ columns: [table.guildId, table.id] }),
+]);
 
 export const insertMilestoneSchema = createInsertSchema(milestonesTable);
 export type InsertMilestone = z.infer<typeof insertMilestoneSchema>;

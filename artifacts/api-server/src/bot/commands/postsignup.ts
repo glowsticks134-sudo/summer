@@ -10,7 +10,7 @@ import {
 import { db } from "@workspace/db";
 import { eventConfigTable, eventSignupsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
-import { getEventConfig } from "../eventScheduler";
+import { getEventConfig, upsertEventConfig } from "../eventScheduler";
 import { logger } from "../../lib/logger";
 
 export const data = new SlashCommandBuilder()
@@ -21,13 +21,13 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
-  const config = await getEventConfig();
-  const signupCount = (await db.select().from(eventSignupsTable)).length;
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
 
-  const unixTs = config?.startsAt
-    ? Math.floor(config.startsAt.getTime() / 1000)
-    : null;
+  const config = await getEventConfig(guildId);
+  const signupCount = (await db.select().from(eventSignupsTable).where(eq(eventSignupsTable.guildId, guildId))).length;
 
+  const unixTs = config?.startsAt ? Math.floor(config.startsAt.getTime() / 1000) : null;
   const startLine = unixTs
     ? `🗓️ **Event Starts:** <t:${unixTs}:F> (<t:${unixTs}:R>)`
     : "🗓️ **Event Starts:** Date to be announced — stay tuned!";
@@ -47,7 +47,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       {
         name: "📋 How It Works",
         value:
-          "• Chat in any channel to earn **15–25 XP** per message\n" +
+          "• Chat in any channel to earn **50 XP** per message (30s cooldown)\n" +
           "• Server hits milestones together → channels, roles, giveaways & quick drops unlock\n" +
           "• Use `/rank`, `/leaderboard`, `/serverprogress` to track progress",
         inline: false,
@@ -74,22 +74,8 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   }
 
   const msg = await interaction.channel.send({ embeds: [embed], components: [row] });
+  await upsertEventConfig(guildId, { signupMessageId: msg.id, signupChannelId: interaction.channelId });
 
-  const existing = await db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1));
-  if (existing.length === 0) {
-    await db.insert(eventConfigTable).values({
-      id: 1,
-      signupMessageId: msg.id,
-      signupChannelId: interaction.channelId,
-      updatedAt: new Date(),
-    });
-  } else {
-    await db
-      .update(eventConfigTable)
-      .set({ signupMessageId: msg.id, signupChannelId: interaction.channelId, updatedAt: new Date() })
-      .where(eq(eventConfigTable.id, 1));
-  }
-
-  logger.info({ messageId: msg.id, channelId: interaction.channelId }, "Sign-up embed posted");
+  logger.info({ guildId, messageId: msg.id, channelId: interaction.channelId }, "Sign-up embed posted");
   await interaction.editReply("✅ Sign-up embed posted!");
 }

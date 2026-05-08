@@ -9,7 +9,10 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply();
 
-  const config = await getEventConfig();
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
+  const config = await getEventConfig(guildId);
   const started = config?.started ?? false;
   const startsAt = config?.startsAt;
   const unixTs = startsAt ? Math.floor(startsAt.getTime() / 1000) : null;
@@ -36,9 +39,11 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       {
         name: "⭐ How to Earn XP",
         value:
-          "• **Messages** — 15–25 XP per message (60s cooldown)\n" +
+          "• **Messages** — 50 XP per message (30s cooldown)\n" +
           "• **Daily Bonus** — 100 XP base, up to +250 streak bonus\n" +
           "• **Trivia** — 50 XP for correct answers\n" +
+          "• **Spin** — daily wheel spin for bonus XP\n" +
+          "• **Shoutout** — give a member +75 XP (1h cooldown)\n" +
           "• **Early Sign-Up Bonus** — 150 XP at event start",
         inline: false,
       },
@@ -50,6 +55,8 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
           "`/weekly` — this week's top earners\n" +
           "`/daily` — claim your daily XP bonus\n" +
           "`/streak` — view your daily streak\n" +
+          "`/spin` — daily lucky wheel spin\n" +
+          "`/shoutout` — shout out a member\n" +
           "`/countdown` — time until event starts\n" +
           "`/serverprogress` — server milestone tracker\n" +
           "`/trivia` — answer a summer trivia question\n" +
@@ -64,7 +71,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       {
         name: "📜 Rules",
         value:
-          "• No spam or bot abuse — XP has a 60s per-message cooldown\n" +
+          "• No spam or bot abuse — XP has a 30s per-message cooldown\n" +
           "• All participants automatically get the **2026 Summer Break Event** role\n" +
           "• Milestone rewards are server-wide — everyone benefits!\n" +
           "• Have fun and enjoy the summer! 🌞",

@@ -4,9 +4,7 @@ import {
   PermissionFlagsBits,
   type ChatInputCommandInteraction,
 } from "discord.js";
-import { db } from "@workspace/db";
-import { eventConfigTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { upsertEventConfig } from "../eventScheduler";
 import { logger } from "../../lib/logger";
 
 export const data = new SlashCommandBuilder()
@@ -23,21 +21,14 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
   const role = interaction.options.getRole("role");
 
-  const existing = await db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1));
-
   if (role === null) {
-    if (existing.length === 0) {
-      await db.insert(eventConfigTable).values({ id: 1, signupRoleId: null, signupRoleName: null, updatedAt: new Date() });
-    } else {
-      await db.update(eventConfigTable)
-        .set({ signupRoleId: null, signupRoleName: null, updatedAt: new Date() })
-        .where(eq(eventConfigTable.id, 1));
-    }
-
-    logger.info("Signup role cleared");
-
+    await upsertEventConfig(guildId, { signupRoleId: null, signupRoleName: null });
+    logger.info({ guildId }, "Signup role cleared");
     await interaction.editReply({
       embeds: [
         new EmbedBuilder()
@@ -50,20 +41,8 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     return;
   }
 
-  if (existing.length === 0) {
-    await db.insert(eventConfigTable).values({
-      id: 1,
-      signupRoleId: role.id,
-      signupRoleName: role.name,
-      updatedAt: new Date(),
-    });
-  } else {
-    await db.update(eventConfigTable)
-      .set({ signupRoleId: role.id, signupRoleName: role.name, updatedAt: new Date() })
-      .where(eq(eventConfigTable.id, 1));
-  }
-
-  logger.info({ roleId: role.id, roleName: role.name }, "Signup role configured");
+  await upsertEventConfig(guildId, { signupRoleId: role.id, signupRoleName: role.name });
+  logger.info({ guildId, roleId: role.id, roleName: role.name }, "Signup role configured");
 
   await interaction.editReply({
     embeds: [

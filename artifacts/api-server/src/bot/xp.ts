@@ -1,28 +1,19 @@
 import { db } from "@workspace/db";
 import { xpUsersTable, serverXpTable, eventConfigTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import type { GuildMember, Message } from "discord.js";
 import { logger } from "../lib/logger";
 import { isEventStarted } from "./eventScheduler";
 
-export async function getActiveMultiplier(): Promise<{ multiplier: number; label: string | null }> {
-  const rows = await db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1));
+const XP_COOLDOWN_MS = 30_000;
+const XP_AMOUNT = 50;
+
+export async function getActiveMultiplier(guildId: string): Promise<{ multiplier: number; label: string | null }> {
+  const rows = await db.select().from(eventConfigTable).where(eq(eventConfigTable.guildId, guildId));
   const config = rows[0];
   if (!config || !config.xpMultiplier || config.xpMultiplier <= 1) return { multiplier: 1, label: null };
   if (config.xpMultiplierExpiresAt && config.xpMultiplierExpiresAt < new Date()) return { multiplier: 1, label: null };
   return { multiplier: config.xpMultiplier, label: config.xpMultiplierLabel ?? null };
-}
-
-const XP_COOLDOWN_MS = 60_000;
-const XP_MIN = 15;
-const XP_MAX = 25;
-
-function randomXp(): number {
-  return Math.floor(Math.random() * (XP_MAX - XP_MIN + 1)) + XP_MIN;
-}
-
-function xpForNextLevel(level: number): number {
-  return 100 * (level + 1) * (level + 2);
 }
 
 export function levelFromXp(xp: number): number {
@@ -34,12 +25,17 @@ export function levelFromXp(xp: number): number {
   return level;
 }
 
+function xpForNextLevel(level: number): number {
+  return 100 * (level + 1) * (level + 2);
+}
+
 export async function awardXp(
   message: Message,
 ): Promise<{ xpGained: number; newLevel: number; leveledUp: boolean; totalXp: number } | null> {
   if (!message.guild || message.author.bot) return null;
 
-  const eventActive = await isEventStarted();
+  const guildId = message.guild.id;
+  const eventActive = await isEventStarted(guildId);
   if (!eventActive) return null;
 
   const userId = message.author.id;
@@ -48,8 +44,7 @@ export async function awardXp(
   const existing = await db
     .select()
     .from(xpUsersTable)
-    .where(eq(xpUsersTable.userId, userId))
-    .limit(1);
+    .where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, userId)));
 
   const user = existing[0];
 
@@ -58,11 +53,9 @@ export async function awardXp(
     if (elapsed < XP_COOLDOWN_MS) return null;
   }
 
-  const { multiplier, label: multiplierLabel } = await getActiveMultiplier();
-  const xpGained = Math.round(randomXp() * multiplier);
-  if (multiplierLabel && multiplier > 1) {
-    logger.debug({ userId, multiplier, multiplierLabel }, "XP multiplier applied");
-  }
+  const { multiplier } = await getActiveMultiplier(guildId);
+  const xpGained = Math.round(XP_AMOUNT * multiplier);
+
   const prevXp = user?.xp ?? 0;
   const prevLevel = user?.level ?? 0;
   const newXp = prevXp + xpGained;
@@ -74,6 +67,7 @@ export async function awardXp(
 
   if (!user) {
     await db.insert(xpUsersTable).values({
+      guildId,
       userId,
       username: message.author.username,
       displayName,
@@ -93,29 +87,25 @@ export async function awardXp(
         displayName,
         username: message.author.username,
       })
-      .where(eq(xpUsersTable.userId, userId));
+      .where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, userId)));
   }
 
-  const serverXpRows = await db.select().from(serverXpTable).where(eq(serverXpTable.id, 1));
+  const serverXpRows = await db.select().from(serverXpTable).where(eq(serverXpTable.guildId, guildId));
   const currentServerXp = serverXpRows[0]?.totalXp ?? 0;
   const newServerXp = currentServerXp + xpGained;
 
   if (serverXpRows.length === 0) {
-    await db.insert(serverXpTable).values({ id: 1, totalXp: newServerXp, updatedAt: now });
+    await db.insert(serverXpTable).values({ guildId, totalXp: newServerXp, updatedAt: now });
   } else {
-    await db
-      .update(serverXpTable)
-      .set({ totalXp: newServerXp, updatedAt: now })
-      .where(eq(serverXpTable.id, 1));
+    await db.update(serverXpTable).set({ totalXp: newServerXp, updatedAt: now }).where(eq(serverXpTable.guildId, guildId));
   }
 
-  logger.info({ userId, xpGained, newXp, newLevel, leveledUp }, "XP awarded");
-
+  logger.info({ guildId, userId, xpGained, newXp, newLevel, leveledUp }, "XP awarded");
   return { xpGained, newLevel, leveledUp, totalXp: newServerXp };
 }
 
-export async function getServerTotalXp(): Promise<number> {
-  const rows = await db.select().from(serverXpTable).where(eq(serverXpTable.id, 1));
+export async function getServerTotalXp(guildId: string): Promise<number> {
+  const rows = await db.select().from(serverXpTable).where(eq(serverXpTable.guildId, guildId));
   return rows[0]?.totalXp ?? 0;
 }
 

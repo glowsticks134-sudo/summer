@@ -5,7 +5,7 @@ import {
 } from "discord.js";
 import { db } from "@workspace/db";
 import { xpUsersTable, serverXpTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { levelFromXp, getActiveMultiplier } from "../xp";
 import { isEventStarted } from "../eventScheduler";
 import { logger } from "../../lib/logger";
@@ -41,7 +41,6 @@ function spinWheel(): SpinOutcome {
 }
 
 function buildSlotRow(outcome: SpinOutcome): string {
-  // Build a 3-reel display where middle reel shows the real result
   const pool = OUTCOMES.filter((o) => o.emoji !== "💀").map((o) => o.emoji);
   const r = () => pool[Math.floor(Math.random() * pool.length)]!;
   if (outcome.label === "JACKPOT") return `${outcome.emoji} ${outcome.emoji} ${outcome.emoji}`;
@@ -56,7 +55,10 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply();
 
-  const started = await isEventStarted();
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
+  const started = await isEventStarted(guildId);
   if (!started) {
     await interaction.editReply({
       embeds: [
@@ -71,7 +73,8 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   const userId = interaction.user.id;
   const now = new Date();
-  const rows = await db.select().from(xpUsersTable).where(eq(xpUsersTable.userId, userId));
+  const rows = await db.select().from(xpUsersTable)
+    .where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, userId)));
   const user = rows[0];
 
   if (user?.lastSpinAt) {
@@ -92,7 +95,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   }
 
   const outcome = spinWheel();
-  const { multiplier } = await getActiveMultiplier();
+  const { multiplier } = await getActiveMultiplier(guildId);
   const xpGained = Math.round(outcome.baseXp * multiplier);
   const multiplierNote = multiplier > 1 ? ` (${outcome.baseXp} × ${multiplier}x multiplier)` : "";
 
@@ -106,6 +109,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   if (!user) {
     await db.insert(xpUsersTable).values({
+      guildId,
       userId,
       username: interaction.user.username,
       displayName,
@@ -121,20 +125,20 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       lastSpinAt: now,
       displayName,
       username: interaction.user.username,
-    }).where(eq(xpUsersTable.userId, userId));
+    }).where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, userId)));
   }
 
   if (xpGained > 0) {
-    const serverRows = await db.select().from(serverXpTable).where(eq(serverXpTable.id, 1));
+    const serverRows = await db.select().from(serverXpTable).where(eq(serverXpTable.guildId, guildId));
     const newServerXp = (serverRows[0]?.totalXp ?? 0) + xpGained;
     if (serverRows.length === 0) {
-      await db.insert(serverXpTable).values({ id: 1, totalXp: newServerXp, updatedAt: now });
+      await db.insert(serverXpTable).values({ guildId, totalXp: newServerXp, updatedAt: now });
     } else {
-      await db.update(serverXpTable).set({ totalXp: newServerXp, updatedAt: now }).where(eq(serverXpTable.id, 1));
+      await db.update(serverXpTable).set({ totalXp: newServerXp, updatedAt: now }).where(eq(serverXpTable.guildId, guildId));
     }
   }
 
-  logger.info({ userId, outcome: outcome.label, xpGained }, "Spin command used");
+  logger.info({ guildId, userId, outcome: outcome.label, xpGained }, "Spin command used");
 
   const slotDisplay = buildSlotRow(outcome);
   const isJackpot = outcome.label === "JACKPOT";

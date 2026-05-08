@@ -1,7 +1,7 @@
 import { SlashCommandBuilder, EmbedBuilder, type ChatInputCommandInteraction } from "discord.js";
 import { db } from "@workspace/db";
 import { xpUsersTable } from "@workspace/db/schema";
-import { desc } from "drizzle-orm";
+import { desc, eq, and } from "drizzle-orm";
 import { levelFromXp } from "../xp";
 import { replyIfNotStarted } from "../utils";
 
@@ -18,12 +18,16 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   await interaction.deferReply();
   if (await replyIfNotStarted(interaction)) return;
 
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
   const page = (interaction.options.getInteger("page") ?? 1) - 1;
   const offset = page * PAGE_SIZE;
 
   const users = await db
     .select()
     .from(xpUsersTable)
+    .where(eq(xpUsersTable.guildId, guildId))
     .orderBy(desc(xpUsersTable.xp))
     .limit(PAGE_SIZE + offset);
 

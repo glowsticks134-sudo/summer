@@ -1,7 +1,7 @@
 import { SlashCommandBuilder, EmbedBuilder, type ChatInputCommandInteraction } from "discord.js";
 import { db } from "@workspace/db";
 import { xpUsersTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { replyIfNotStarted } from "../utils";
 
 const BASE_DAILY_XP = 100;
@@ -21,8 +21,12 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   await interaction.deferReply();
   if (await replyIfNotStarted(interaction)) return;
 
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
   const target = interaction.options.getUser("user") ?? interaction.user;
-  const rows = await db.select().from(xpUsersTable).where(eq(xpUsersTable.userId, target.id));
+  const rows = await db.select().from(xpUsersTable)
+    .where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, target.id)));
   const user = rows[0];
 
   if (!user || user.dailyStreak === 0) {

@@ -2,7 +2,7 @@ import type { Interaction, Client, ButtonInteraction } from "discord.js";
 import { EmbedBuilder } from "discord.js";
 import { db } from "@workspace/db";
 import { eventSignupsTable, eventConfigTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { logger } from "../../lib/logger";
 import * as rankCommand from "../commands/rank";
 import * as leaderboardCommand from "../commands/leaderboard";
@@ -28,6 +28,33 @@ import * as setMultiplierCommand from "../commands/setmultiplier";
 import * as endMultiplierCommand from "../commands/endmultiplier";
 import * as spinCommand from "../commands/spin";
 import * as shoutoutCommand from "../commands/shoutout";
+
+// Commands that only the bot owner (DISCORD_OWNER_ID) may execute
+const OWNER_ONLY_COMMANDS = new Set([
+  "seteventstart",
+  "postsignup",
+  "setsignuprole",
+  "setgoal",
+  "setreward",
+  "postliveprogress",
+  "setmultiplier",
+  "endmultiplier",
+  "announce",
+  "adminaward",
+  "giveaway",
+  "drop",
+  "trivia",
+  "poll",
+]);
+
+function isOwner(userId: string): boolean {
+  const ownerId = process.env["DISCORD_OWNER_ID"];
+  if (!ownerId) {
+    logger.warn("DISCORD_OWNER_ID is not set — admin commands are disabled for everyone");
+    return false;
+  }
+  return userId === ownerId;
+}
 
 type SlashExecutor = (interaction: Parameters<typeof rankCommand.execute>[0], client: Client) => Promise<void>;
 
@@ -66,6 +93,18 @@ export async function onInteractionCreate(client: Client, interaction: Interacti
 
   if (!interaction.isChatInputCommand()) return;
 
+  // Owner-only gate: block non-owners from admin commands
+  if (OWNER_ONLY_COMMANDS.has(interaction.commandName) && !isOwner(interaction.user.id)) {
+    const msg = { content: "🔒 This command is restricted to the bot owner only.", ephemeral: true };
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp(msg);
+    } else {
+      await interaction.reply(msg);
+    }
+    logger.warn({ userId: interaction.user.id, command: interaction.commandName }, "Non-owner attempted admin command");
+    return;
+  }
+
   const handler = commandMap.get(interaction.commandName);
   if (!handler) return;
 
@@ -85,7 +124,6 @@ export async function onInteractionCreate(client: Client, interaction: Interacti
 async function handleButton(client: Client, interaction: ButtonInteraction): Promise<void> {
   const { customId } = interaction;
 
-  // Trivia buttons: trivia_A_channelId, trivia_B_channelId, etc.
   if (customId.startsWith("trivia_")) {
     const parts = customId.split("_");
     const answer = parts[1];
@@ -96,7 +134,6 @@ async function handleButton(client: Client, interaction: ButtonInteraction): Pro
     return;
   }
 
-  // Sign-up button
   if (customId === "summer_signup") {
     await handleSignupButton(interaction);
     return;
@@ -106,11 +143,17 @@ async function handleButton(client: Client, interaction: ButtonInteraction): Pro
 async function handleSignupButton(interaction: ButtonInteraction): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
+  const guildId = interaction.guild?.id;
+  if (!guildId) {
+    await interaction.editReply("❌ This button can only be used in a server.");
+    return;
+  }
+
   const userId = interaction.user.id;
   const existing = await db
     .select()
     .from(eventSignupsTable)
-    .where(eq(eventSignupsTable.userId, userId));
+    .where(and(eq(eventSignupsTable.guildId, guildId), eq(eventSignupsTable.userId, userId)));
 
   if (existing.length > 0) {
     await interaction.editReply({
@@ -128,6 +171,7 @@ async function handleSignupButton(interaction: ButtonInteraction): Promise<void>
     ?? await interaction.guild?.members.fetch(userId).catch(() => null);
 
   await db.insert(eventSignupsTable).values({
+    guildId,
     userId,
     username: interaction.user.username,
     displayName: member?.displayName ?? interaction.user.username,
@@ -135,15 +179,14 @@ async function handleSignupButton(interaction: ButtonInteraction): Promise<void>
   });
 
   const [signups, configRows] = await Promise.all([
-    db.select().from(eventSignupsTable),
-    db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1)),
+    db.select().from(eventSignupsTable).where(eq(eventSignupsTable.guildId, guildId)),
+    db.select().from(eventConfigTable).where(eq(eventConfigTable.guildId, guildId)),
   ]);
 
   const config = configRows[0];
   const startsAt = config?.startsAt ?? null;
   const unixTs = startsAt ? Math.floor(startsAt.getTime() / 1000) : null;
 
-  // Assign configured signup role if set
   let roleGranted = false;
   let roleLine = "🎖️ The **2026 Summer Break Event** role will be granted automatically when the event starts";
   if (member && config?.signupRoleId) {
@@ -157,17 +200,17 @@ async function handleSignupButton(interaction: ButtonInteraction): Promise<void>
         await member.roles.add(role);
         await db.update(eventSignupsTable)
           .set({ roleGranted: true })
-          .where(eq(eventSignupsTable.userId, userId));
+          .where(and(eq(eventSignupsTable.guildId, guildId), eq(eventSignupsTable.userId, userId)));
         roleGranted = true;
         roleLine = `🎖️ You've been given the **${role.name}** role!`;
-        logger.info({ userId, roleId: role.id, roleName: role.name }, "Signup role assigned");
+        logger.info({ userId, roleId: role.id, roleName: role.name, guildId }, "Signup role assigned");
       }
     } catch (err) {
-      logger.warn({ err, userId }, "Failed to assign signup role");
+      logger.warn({ err, userId, guildId }, "Failed to assign signup role");
     }
   }
 
-  logger.info({ userId, username: interaction.user.username, roleGranted }, "User signed up for Summer Break Event");
+  logger.info({ userId, username: interaction.user.username, guildId, roleGranted }, "User signed up for Summer Break Event");
 
   await interaction.editReply({
     embeds: [

@@ -1,7 +1,7 @@
 import { SlashCommandBuilder, EmbedBuilder, type ChatInputCommandInteraction } from "discord.js";
 import { db } from "@workspace/db";
 import { xpUsersTable } from "@workspace/db/schema";
-import { eq, gt } from "drizzle-orm";
+import { eq, gt, and } from "drizzle-orm";
 import { levelFromXp } from "../xp";
 import { replyIfNotStarted } from "../utils";
 
@@ -16,12 +16,15 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   await interaction.deferReply();
   if (await replyIfNotStarted(interaction)) return;
 
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
   const target = interaction.options.getUser("user") ?? interaction.user;
 
   const rows = await db
     .select()
     .from(xpUsersTable)
-    .where(eq(xpUsersTable.userId, target.id));
+    .where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, target.id)));
 
   if (rows.length === 0) {
     await interaction.editReply(
@@ -32,7 +35,6 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   const user = rows[0];
   const level = levelFromXp(user.xp);
-
   const xpToNextLevel = getXpToNextLevel(user.xp);
   const xpInCurrentLevel = getXpInCurrentLevel(user.xp);
   const levelProgress = xpInCurrentLevel + xpToNextLevel > 0
@@ -42,7 +44,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   const higherCount = await db
     .select()
     .from(xpUsersTable)
-    .where(gt(xpUsersTable.xp, user.xp));
+    .where(and(eq(xpUsersTable.guildId, guildId), gt(xpUsersTable.xp, user.xp)));
 
   const rank = higherCount.length + 1;
   const progressBar = buildProgressBar(levelProgress);

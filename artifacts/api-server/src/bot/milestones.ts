@@ -1,8 +1,8 @@
 import { db } from "@workspace/db";
 import { milestonesTable, xpUsersTable } from "@workspace/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import type { Client, Guild, TextChannel } from "discord.js";
-import { ChannelType, PermissionFlagsBits } from "discord.js";
+import { ChannelType } from "discord.js";
 import { logger } from "../lib/logger";
 import { startGiveaway } from "./giveaway";
 import { startQuickDrop } from "./quickdrop";
@@ -111,11 +111,15 @@ export const MILESTONE_DEFS: MilestoneDef[] = [
   },
 ];
 
-export async function seedMilestones(): Promise<void> {
+export async function seedMilestones(guildId: string): Promise<void> {
   for (const def of MILESTONE_DEFS) {
-    const existing = await db.select().from(milestonesTable).where(eq(milestonesTable.id, def.id));
+    const existing = await db
+      .select()
+      .from(milestonesTable)
+      .where(and(eq(milestonesTable.guildId, guildId), eq(milestonesTable.id, def.id)));
     if (existing.length === 0) {
       await db.insert(milestonesTable).values({
+        guildId,
         id: def.id,
         xpRequired: def.xpRequired,
         title: def.title,
@@ -126,14 +130,14 @@ export async function seedMilestones(): Promise<void> {
       });
     }
   }
-  logger.info("Milestones seeded");
+  logger.info({ guildId }, "Milestones seeded");
 }
 
 export async function checkMilestones(client: Client, guild: Guild, serverTotalXp: number): Promise<void> {
   const locked = await db
     .select()
     .from(milestonesTable)
-    .where(eq(milestonesTable.unlocked, false));
+    .where(and(eq(milestonesTable.guildId, guild.id), eq(milestonesTable.unlocked, false)));
 
   for (const milestone of locked) {
     if (serverTotalXp >= milestone.xpRequired) {
@@ -143,26 +147,28 @@ export async function checkMilestones(client: Client, guild: Guild, serverTotalX
 }
 
 async function unlockMilestone(client: Client, guild: Guild, milestoneId: number): Promise<void> {
+  const guildId = guild.id;
   const def = MILESTONE_DEFS.find((m) => m.id === milestoneId);
   if (!def) return;
 
-  const dbRows = await db.select().from(milestonesTable).where(eq(milestonesTable.id, milestoneId));
+  const dbRows = await db
+    .select()
+    .from(milestonesTable)
+    .where(and(eq(milestonesTable.guildId, guildId), eq(milestonesTable.id, milestoneId)));
   const dbRow = dbRows[0];
 
   await db
     .update(milestonesTable)
     .set({ unlocked: true, unlockedAt: new Date() })
-    .where(eq(milestonesTable.id, milestoneId));
+    .where(and(eq(milestonesTable.guildId, guildId), eq(milestonesTable.id, milestoneId)));
 
-  // Use DB values (which admins may have customised) with in-memory defs as fallback
   const rewardType = (dbRow?.rewardType ?? def.rewardType) as MilestoneDef["rewardType"];
   const rewardConfig = (dbRow?.rewardConfig ?? def.rewardConfig) as Record<string, unknown>;
   const title = dbRow?.title ?? def.title;
   const description = dbRow?.description ?? def.description;
-
   const activeDef: MilestoneDef = { ...def, rewardType, rewardConfig, title, description };
 
-  logger.info({ milestoneId, title }, "Milestone unlocked");
+  logger.info({ guildId, milestoneId, title }, "Milestone unlocked");
 
   const announcementChannel = findChannel(guild, ["announcements", "general", "summer-lounge", "bot-log"]);
 
@@ -182,27 +188,16 @@ async function unlockMilestone(client: Client, guild: Guild, milestoneId: number
       }
     }
   } catch (err) {
-    logger.error({ err, milestoneId }, "Error executing milestone reward");
+    logger.error({ err, guildId, milestoneId }, "Error executing milestone reward");
   }
 }
 
-async function executeChannelReward(
-  guild: Guild,
-  def: MilestoneDef,
-  announcementChannel: TextChannel | null,
-): Promise<void> {
+async function executeChannelReward(guild: Guild, def: MilestoneDef, announcementChannel: TextChannel | null): Promise<void> {
   const cfg = def.rewardConfig as { name: string; topic: string };
   const existingChannel = guild.channels.cache.find((c) => c.name === cfg.name);
   if (!existingChannel) {
-    const newChannel = await guild.channels.create({
-      name: cfg.name,
-      type: ChannelType.GuildText,
-      topic: cfg.topic,
-    });
-    logger.info({ channelId: newChannel.id, name: cfg.name }, "Created channel for milestone");
-    await newChannel.send(
-      `🎊 **${def.title}** — This channel was unlocked because the server hit **${def.xpRequired.toLocaleString()} XP**! ${def.description}`,
-    );
+    const newChannel = await guild.channels.create({ name: cfg.name, type: ChannelType.GuildText, topic: cfg.topic });
+    await newChannel.send(`🎊 **${def.title}** — This channel was unlocked because the server hit **${def.xpRequired.toLocaleString()} XP**! ${def.description}`);
   }
   if (announcementChannel) {
     await announcementChannel.send(
@@ -211,25 +206,19 @@ async function executeChannelReward(
   }
 }
 
-async function executeRoleReward(
-  guild: Guild,
-  def: MilestoneDef,
-  announcementChannel: TextChannel | null,
-): Promise<void> {
+async function executeRoleReward(guild: Guild, def: MilestoneDef, announcementChannel: TextChannel | null): Promise<void> {
   const cfg = def.rewardConfig as { roleName: string; color: number; topN: number };
+  const guildId = guild.id;
 
   let role = guild.roles.cache.find((r) => r.name === cfg.roleName);
   if (!role) {
-    role = await guild.roles.create({
-      name: cfg.roleName,
-      color: cfg.color,
-      reason: `Summer Break Event Milestone: ${def.title}`,
-    });
+    role = await guild.roles.create({ name: cfg.roleName, color: cfg.color, reason: `Summer Break Event Milestone: ${def.title}` });
   }
 
   const topUsers = await db
     .select()
     .from(xpUsersTable)
+    .where(eq(xpUsersTable.guildId, guildId))
     .orderBy(desc(xpUsersTable.xp))
     .limit(cfg.topN);
 
@@ -244,61 +233,33 @@ async function executeRoleReward(
 
   if (announcementChannel) {
     const mentions = awarded.length > 0 ? awarded.join(", ") : "top earners";
-    await announcementChannel.send(
-      `🎊 **MILESTONE UNLOCKED: ${def.title}**\n${def.description}\n\n🏅 The **${cfg.roleName}** role has been awarded to: ${mentions}`,
-    );
+    await announcementChannel.send(`🎊 **MILESTONE UNLOCKED: ${def.title}**\n${def.description}\n\n🏅 The **${cfg.roleName}** role has been awarded to: ${mentions}`);
   }
 }
 
-async function executeGiveawayReward(
-  client: Client,
-  guild: Guild,
-  def: MilestoneDef,
-  announcementChannel: TextChannel | null,
-): Promise<void> {
+async function executeGiveawayReward(client: Client, guild: Guild, def: MilestoneDef, announcementChannel: TextChannel | null): Promise<void> {
   const cfg = def.rewardConfig as { prize: string; durationMs: number; winners: number; channelName: string };
-  const targetChannel =
-    (findChannel(guild, [cfg.channelName]) as TextChannel | null) ?? announcementChannel;
+  const targetChannel = (findChannel(guild, [cfg.channelName]) as TextChannel | null) ?? announcementChannel;
   if (!targetChannel) return;
-
   if (announcementChannel && announcementChannel.id !== targetChannel.id) {
     await announcementChannel.send(`🎊 **MILESTONE UNLOCKED: ${def.title}**\n${def.description}`);
   }
-
-  await startGiveaway(client, targetChannel, {
-    prize: cfg.prize,
-    durationMs: cfg.durationMs,
-    winnersCount: cfg.winners,
-    milestoneId: def.id,
-  });
+  await startGiveaway(client, targetChannel, { prize: cfg.prize, durationMs: cfg.durationMs, winnersCount: cfg.winners, milestoneId: def.id }, guild.id);
 }
 
-async function executeQuickDropReward(
-  client: Client,
-  guild: Guild,
-  def: MilestoneDef,
-  announcementChannel: TextChannel | null,
-): Promise<void> {
+async function executeQuickDropReward(client: Client, guild: Guild, def: MilestoneDef, announcementChannel: TextChannel | null): Promise<void> {
   const cfg = def.rewardConfig as { prize: string; durationMs: number; channelName: string };
-  const targetChannel =
-    (findChannel(guild, [cfg.channelName]) as TextChannel | null) ?? announcementChannel;
+  const targetChannel = (findChannel(guild, [cfg.channelName]) as TextChannel | null) ?? announcementChannel;
   if (!targetChannel) return;
-
   if (announcementChannel && announcementChannel.id !== targetChannel.id) {
     await announcementChannel.send(`🎊 **MILESTONE UNLOCKED: ${def.title}**\n${def.description}`);
   }
-
-  await startQuickDrop(client, targetChannel, {
-    prize: cfg.prize,
-    durationMs: cfg.durationMs,
-  });
+  await startQuickDrop(client, targetChannel, { prize: cfg.prize, durationMs: cfg.durationMs });
 }
 
 function findChannel(guild: Guild, names: string[]): TextChannel | null {
   for (const name of names) {
-    const ch = guild.channels.cache.find(
-      (c) => c.name === name && c.type === ChannelType.GuildText,
-    ) as TextChannel | undefined;
+    const ch = guild.channels.cache.find((c) => c.name === name && c.type === ChannelType.GuildText) as TextChannel | undefined;
     if (ch) return ch;
   }
   return null;

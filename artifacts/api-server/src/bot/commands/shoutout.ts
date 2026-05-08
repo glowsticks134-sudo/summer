@@ -5,12 +5,12 @@ import {
 } from "discord.js";
 import { db } from "@workspace/db";
 import { xpUsersTable, serverXpTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { levelFromXp } from "../xp";
 import { isEventStarted } from "../eventScheduler";
 import { logger } from "../../lib/logger";
 
-const SHOUTOUT_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+const SHOUTOUT_COOLDOWN_MS = 60 * 60 * 1000;
 const SHOUTOUT_XP = 75;
 
 export const data = new SlashCommandBuilder()
@@ -26,7 +26,10 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply();
 
-  const started = await isEventStarted();
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
+  const started = await isEventStarted(guildId);
   if (!started) {
     await interaction.editReply({
       embeds: [
@@ -45,23 +48,18 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   if (target.id === giverId) {
     await interaction.editReply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0xef4444)
-          .setTitle("❌ Nice Try!")
-          .setDescription("You can't shout yourself out. Give the love to someone else! 😄"),
-      ],
+      embeds: [new EmbedBuilder().setColor(0xef4444).setTitle("❌ Nice Try!").setDescription("You can't shout yourself out. Give the love to someone else! 😄")],
     });
     return;
   }
-
   if (target.bot) {
     await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xef4444).setDescription("❌ Bots don't need shoutouts!")] });
     return;
   }
 
   const now = new Date();
-  const giverRows = await db.select().from(xpUsersTable).where(eq(xpUsersTable.userId, giverId));
+  const giverRows = await db.select().from(xpUsersTable)
+    .where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, giverId)));
   const giver = giverRows[0];
 
   if (giver?.lastShoutoutAt) {
@@ -81,13 +79,13 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     }
   }
 
-  // Award XP to target
   const targetMember = interaction.guild?.members.cache.get(target.id);
   const targetDisplayName = targetMember?.displayName ?? target.username;
   const giverMember = interaction.guild?.members.cache.get(giverId);
   const giverDisplayName = giverMember?.displayName ?? interaction.user.username;
 
-  const targetRows = await db.select().from(xpUsersTable).where(eq(xpUsersTable.userId, target.id));
+  const targetRows = await db.select().from(xpUsersTable)
+    .where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, target.id)));
   const targetUser = targetRows[0];
   const prevXp = targetUser?.xp ?? 0;
   const newXp = prevXp + SHOUTOUT_XP;
@@ -96,6 +94,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   if (!targetUser) {
     await db.insert(xpUsersTable).values({
+      guildId,
       userId: target.id,
       username: target.username,
       displayName: targetDisplayName,
@@ -109,21 +108,20 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       level: newLevel,
       displayName: targetDisplayName,
       username: target.username,
-    }).where(eq(xpUsersTable.userId, target.id));
+    }).where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, target.id)));
   }
 
-  // Update server XP
-  const serverRows = await db.select().from(serverXpTable).where(eq(serverXpTable.id, 1));
+  const serverRows = await db.select().from(serverXpTable).where(eq(serverXpTable.guildId, guildId));
   const newServerXp = (serverRows[0]?.totalXp ?? 0) + SHOUTOUT_XP;
   if (serverRows.length === 0) {
-    await db.insert(serverXpTable).values({ id: 1, totalXp: newServerXp, updatedAt: now });
+    await db.insert(serverXpTable).values({ guildId, totalXp: newServerXp, updatedAt: now });
   } else {
-    await db.update(serverXpTable).set({ totalXp: newServerXp, updatedAt: now }).where(eq(serverXpTable.id, 1));
+    await db.update(serverXpTable).set({ totalXp: newServerXp, updatedAt: now }).where(eq(serverXpTable.guildId, guildId));
   }
 
-  // Update giver's shoutout cooldown
   if (!giver) {
     await db.insert(xpUsersTable).values({
+      guildId,
       userId: giverId,
       username: interaction.user.username,
       displayName: giverDisplayName,
@@ -133,10 +131,11 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       lastShoutoutAt: now,
     });
   } else {
-    await db.update(xpUsersTable).set({ lastShoutoutAt: now, displayName: giverDisplayName }).where(eq(xpUsersTable.userId, giverId));
+    await db.update(xpUsersTable).set({ lastShoutoutAt: now, displayName: giverDisplayName })
+      .where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, giverId)));
   }
 
-  logger.info({ giverId, targetId: target.id, xpGained: SHOUTOUT_XP }, "Shoutout given");
+  logger.info({ guildId, giverId, targetId: target.id, xpGained: SHOUTOUT_XP }, "Shoutout given");
 
   const reasonLine = reason ? `\n💬 *"${reason}"*` : "";
   const levelLine = leveledUp ? `\n\n⬆️ <@${target.id}> leveled up to **Level ${newLevel}**!` : "";

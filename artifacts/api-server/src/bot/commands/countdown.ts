@@ -8,12 +8,13 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply();
 
-  const config = await getEventConfig();
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
+  const config = await getEventConfig(guildId);
 
   if (!config || !config.startsAt) {
-    await interaction.editReply(
-      "📅 The event start time hasn't been set yet. Stay tuned! 🏖️",
-    );
+    await interaction.editReply("📅 The event start time hasn't been set yet. Stay tuned! 🏖️");
     return;
   }
 
@@ -29,7 +30,6 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   }
 
   const msUntil = config.startsAt.getTime() - Date.now();
-
   if (msUntil <= 0) {
     await interaction.editReply("🎉 The event is starting any moment now!");
     return;

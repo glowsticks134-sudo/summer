@@ -9,9 +9,10 @@ import {
 import { db } from "@workspace/db";
 import { eventConfigTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { upsertEventConfig, getEventConfig } from "../eventScheduler";
 import { logger } from "../../lib/logger";
 
-let multiplierTimer: ReturnType<typeof setTimeout> | null = null;
+const multiplierTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export const data = new SlashCommandBuilder()
   .setName("setmultiplier")
@@ -43,36 +44,24 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction, client: Client): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
   const multiplier = interaction.options.getNumber("multiplier", true);
   const durationMinutes = interaction.options.getInteger("duration_minutes", true);
   const label = interaction.options.getString("label") ?? `${multiplier}x XP Event`;
   const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000);
 
-  const existing = await db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1));
-  if (existing.length === 0) {
-    await db.insert(eventConfigTable).values({
-      id: 1,
-      xpMultiplier: multiplier,
-      xpMultiplierExpiresAt: expiresAt,
-      xpMultiplierLabel: label,
-      updatedAt: new Date(),
-    });
-  } else {
-    await db.update(eventConfigTable).set({
-      xpMultiplier: multiplier,
-      xpMultiplierExpiresAt: expiresAt,
-      xpMultiplierLabel: label,
-      updatedAt: new Date(),
-    }).where(eq(eventConfigTable.id, 1));
-  }
+  await upsertEventConfig(guildId, {
+    xpMultiplier: multiplier,
+    xpMultiplierExpiresAt: expiresAt,
+    xpMultiplierLabel: label,
+  });
 
-  logger.info({ multiplier, durationMinutes, label, expiresAt }, "XP multiplier activated");
+  logger.info({ guildId, multiplier, durationMinutes, label, expiresAt }, "XP multiplier activated");
 
-  // Announce in guild
-  await announceMultiplierStart(client, multiplier, label, expiresAt);
-
-  // Schedule end announcement
-  scheduleMultiplierEnd(client, label, durationMinutes * 60 * 1000);
+  await announceMultiplierStart(client, guildId, multiplier, label, expiresAt);
+  scheduleMultiplierEnd(client, guildId, label, durationMinutes * 60 * 1000);
 
   const expiresUnix = Math.floor(expiresAt.getTime() / 1000);
 
@@ -91,21 +80,18 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
   });
 }
 
-async function announceMultiplierStart(client: Client, multiplier: number, label: string, expiresAt: Date): Promise<void> {
-  const guildId = process.env["DISCORD_GUILD_ID"];
-  if (!guildId) return;
+async function announceMultiplierStart(client: Client, guildId: string, multiplier: number, label: string, expiresAt: Date): Promise<void> {
   const guild = client.guilds.cache.get(guildId);
   if (!guild) return;
 
-  const config = await db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1));
-  const channelId = config[0]?.announcementChannelId;
+  const config = await getEventConfig(guildId);
+  const channelId = config?.announcementChannelId;
   const channel = (channelId ? guild.channels.cache.get(channelId) : null) as TextChannel | null
     ?? guild.channels.cache.find((c) => ["announcements", "general", "summer-lounge"].includes(c.name) && "send" in c) as TextChannel | null;
 
   if (!channel) return;
 
   const expiresUnix = Math.floor(expiresAt.getTime() / 1000);
-
   const embed = new EmbedBuilder()
     .setColor(0xf97316)
     .setTitle(`⚡ ${label} — XP MULTIPLIER IS LIVE!`)
@@ -120,23 +106,24 @@ async function announceMultiplierStart(client: Client, multiplier: number, label
   await channel.send({ content: "@everyone", embeds: [embed] }).catch(() => {});
 }
 
-export function scheduleMultiplierEnd(client: Client, label: string, durationMs: number): void {
-  if (multiplierTimer) clearTimeout(multiplierTimer);
-  multiplierTimer = setTimeout(async () => {
-    await db.update(eventConfigTable).set({
+export function scheduleMultiplierEnd(client: Client, guildId: string, label: string, durationMs: number): void {
+  const existing = multiplierTimers.get(guildId);
+  if (existing) clearTimeout(existing);
+
+  const timer = setTimeout(async () => {
+    multiplierTimers.delete(guildId);
+
+    await upsertEventConfig(guildId, {
       xpMultiplier: 1,
       xpMultiplierExpiresAt: null,
       xpMultiplierLabel: null,
-      updatedAt: new Date(),
-    }).where(eq(eventConfigTable.id, 1)).catch(() => {});
+    }).catch(() => {});
 
-    const guildId = process.env["DISCORD_GUILD_ID"];
-    if (!guildId) return;
     const guild = client.guilds.cache.get(guildId);
     if (!guild) return;
 
-    const config = await db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1));
-    const channelId = config[0]?.announcementChannelId;
+    const config = await getEventConfig(guildId);
+    const channelId = config?.announcementChannelId;
     const channel = (channelId ? guild.channels.cache.get(channelId) : null) as TextChannel | null
       ?? guild.channels.cache.find((c) => ["announcements", "general", "summer-lounge"].includes(c.name) && "send" in c) as TextChannel | null;
 
@@ -153,6 +140,8 @@ export function scheduleMultiplierEnd(client: Client, label: string, durationMs:
       ],
     }).catch(() => {});
 
-    logger.info({ label }, "XP multiplier expired and reset");
+    logger.info({ guildId, label }, "XP multiplier expired and reset");
   }, durationMs);
+
+  multiplierTimers.set(guildId, timer);
 }

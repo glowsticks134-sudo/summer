@@ -1,7 +1,7 @@
 import { SlashCommandBuilder, EmbedBuilder, type ChatInputCommandInteraction } from "discord.js";
 import { db } from "@workspace/db";
 import { serverXpTable, milestonesTable } from "@workspace/db/schema";
-import { eq, gt } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { MILESTONE_DEFS } from "../milestones";
 import { replyIfNotStarted } from "../utils";
 
@@ -13,10 +13,13 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   await interaction.deferReply();
   if (await replyIfNotStarted(interaction)) return;
 
-  const serverXpRows = await db.select().from(serverXpTable).where(eq(serverXpTable.id, 1));
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
+  const serverXpRows = await db.select().from(serverXpTable).where(eq(serverXpTable.guildId, guildId));
   const totalXp = serverXpRows[0]?.totalXp ?? 0;
 
-  const milestoneRows = await db.select().from(milestonesTable);
+  const milestoneRows = await db.select().from(milestonesTable).where(eq(milestonesTable.guildId, guildId));
   const milestoneMap = new Map(milestoneRows.map((m) => [m.id, m]));
 
   const nextMilestone = MILESTONE_DEFS.find((m) => !(milestoneMap.get(m.id)?.unlocked));

@@ -28,6 +28,9 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
   await interaction.deferReply({ ephemeral: true });
   if (await replyIfNotStarted(interaction)) return;
 
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
   const prize = interaction.options.getString("prize", true);
   const minutes = interaction.options.getInteger("minutes", true);
   const winnersCount = interaction.options.getInteger("winners") ?? 1;
@@ -38,14 +41,9 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
   }
 
   const durationMs = minutes * 60_000;
+  await startGiveaway(client, interaction.channel as TextChannel, { prize, durationMs, winnersCount }, guildId);
 
-  await startGiveaway(client, interaction.channel as TextChannel, {
-    prize,
-    durationMs,
-    winnersCount,
-  });
-
-  logger.info({ prize, minutes, winnersCount, adminId: interaction.user.id }, "Admin started giveaway");
+  logger.info({ guildId, prize, minutes, winnersCount, adminId: interaction.user.id }, "Admin started giveaway");
 
   await interaction.editReply({
     embeds: [

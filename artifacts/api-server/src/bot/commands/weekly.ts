@@ -1,8 +1,7 @@
 import { SlashCommandBuilder, EmbedBuilder, type ChatInputCommandInteraction } from "discord.js";
 import { db } from "@workspace/db";
 import { xpUsersTable } from "@workspace/db/schema";
-import { desc, gt } from "drizzle-orm";
-import { levelFromXp } from "../xp";
+import { eq, gt, and } from "drizzle-orm";
 import { replyIfNotStarted } from "../utils";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -15,13 +14,16 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   await interaction.deferReply();
   if (await replyIfNotStarted(interaction)) return;
 
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
   const now = new Date();
   const weekAgo = new Date(now.getTime() - WEEK_MS);
 
   const allUsers = await db
     .select()
     .from(xpUsersTable)
-    .where(gt(xpUsersTable.weekStartAt, weekAgo));
+    .where(and(eq(xpUsersTable.guildId, guildId), gt(xpUsersTable.weekStartAt, weekAgo)));
 
   const activeUsers = allUsers
     .filter((u) => u.weeklyXp > 0)
@@ -41,7 +43,6 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     return `${medal} **${u.displayName}** — ⭐ ${u.weeklyXp.toLocaleString()} XP this week`;
   });
 
-  // Find next Monday reset
   const nextMonday = getNextMonday();
   const resetTs = Math.floor(nextMonday.getTime() / 1000);
 
@@ -49,7 +50,6 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     .setTitle("📅 Weekly Leaderboard")
     .setColor(0x8b5cf6)
     .setDescription(rows.join("\n"))
-    .setFooter({ text: `Resets: ` })
     .addFields({ name: "🔄 Weekly Reset", value: `<t:${resetTs}:R> (<t:${resetTs}:F>)`, inline: false })
     .setFooter({ text: "2026 Summer Break Event · XP from messages + daily bonuses" })
     .setTimestamp();

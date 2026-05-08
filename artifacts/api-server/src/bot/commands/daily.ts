@@ -1,13 +1,13 @@
 import { SlashCommandBuilder, EmbedBuilder, type ChatInputCommandInteraction } from "discord.js";
 import { db } from "@workspace/db";
 import { xpUsersTable, serverXpTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { isEventStarted } from "../eventScheduler";
 import { levelFromXp } from "../xp";
 import { logger } from "../../lib/logger";
 
-const DAILY_COOLDOWN_MS = 20 * 60 * 60 * 1000; // 20 hours
-const STREAK_BREAK_MS = 48 * 60 * 60 * 1000;   // 48 hours breaks streak
+const DAILY_COOLDOWN_MS = 20 * 60 * 60 * 1000;
+const STREAK_BREAK_MS = 48 * 60 * 60 * 1000;
 const BASE_DAILY_XP = 100;
 const STREAK_BONUS_PER_DAY = 15;
 const MAX_STREAK_BONUS = 250;
@@ -19,7 +19,10 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply();
 
-  const started = await isEventStarted();
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
+  const started = await isEventStarted(guildId);
   if (!started) {
     await interaction.editReply({
       embeds: [
@@ -35,7 +38,8 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   const userId = interaction.user.id;
   const now = new Date();
 
-  const rows = await db.select().from(xpUsersTable).where(eq(xpUsersTable.userId, userId));
+  const rows = await db.select().from(xpUsersTable)
+    .where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, userId)));
   const user = rows[0];
 
   if (user?.lastDailyAt) {
@@ -57,7 +61,6 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     }
   }
 
-  // Calculate streak
   let newStreak = 1;
   if (user?.lastDailyAt) {
     const elapsed = now.getTime() - user.lastDailyAt.getTime();
@@ -75,6 +78,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   if (!user) {
     await db.insert(xpUsersTable).values({
+      guildId,
       userId,
       username: interaction.user.username,
       displayName,
@@ -96,19 +100,18 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       displayName,
       weeklyXp: weeklyXp.amount,
       weekStartAt: weeklyXp.startAt,
-    }).where(eq(xpUsersTable.userId, userId));
+    }).where(and(eq(xpUsersTable.guildId, guildId), eq(xpUsersTable.userId, userId)));
   }
 
-  // Update server total XP
-  const serverRows = await db.select().from(serverXpTable).where(eq(serverXpTable.id, 1));
+  const serverRows = await db.select().from(serverXpTable).where(eq(serverXpTable.guildId, guildId));
   const newServerXp = (serverRows[0]?.totalXp ?? 0) + xpGained;
   if (serverRows.length === 0) {
-    await db.insert(serverXpTable).values({ id: 1, totalXp: newServerXp, updatedAt: now });
+    await db.insert(serverXpTable).values({ guildId, totalXp: newServerXp, updatedAt: now });
   } else {
-    await db.update(serverXpTable).set({ totalXp: newServerXp, updatedAt: now }).where(eq(serverXpTable.id, 1));
+    await db.update(serverXpTable).set({ totalXp: newServerXp, updatedAt: now }).where(eq(serverXpTable.guildId, guildId));
   }
 
-  logger.info({ userId, xpGained, newStreak }, "Daily XP claimed");
+  logger.info({ guildId, userId, xpGained, newStreak }, "Daily XP claimed");
 
   const streakEmoji = newStreak >= 30 ? "🏆" : newStreak >= 14 ? "🔥" : newStreak >= 7 ? "⭐" : "✨";
   const milestoneText = newStreak === 7 ? "\n🎉 **7-day streak milestone!**"

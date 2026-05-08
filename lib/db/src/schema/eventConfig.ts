@@ -1,9 +1,9 @@
-import { pgTable, integer, text, boolean, timestamp, real } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, timestamp, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const eventConfigTable = pgTable("event_config", {
-  id: integer("id").primaryKey().default(1),
+  guildId: text("guild_id").primaryKey(),
   startsAt: timestamp("starts_at"),
   started: boolean("started").notNull().default(false),
   announcementChannelId: text("announcement_channel_id"),

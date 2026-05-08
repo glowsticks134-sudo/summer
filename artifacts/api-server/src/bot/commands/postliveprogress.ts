@@ -6,9 +6,7 @@ import {
   type ChatInputCommandInteraction,
   type TextChannel,
 } from "discord.js";
-import { db } from "@workspace/db";
-import { eventConfigTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { upsertEventConfig } from "../eventScheduler";
 import { buildLiveProgressEmbed } from "../liveProgress";
 import { logger } from "../../lib/logger";
 
@@ -27,6 +25,9 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
+  const guildId = interaction.guildId;
+  if (!guildId) { await interaction.editReply("❌ This command can only be used in a server."); return; }
+
   const channelOpt = interaction.options.getChannel("channel") as TextChannel | null;
   const targetChannel: TextChannel | null =
     channelOpt ??
@@ -37,7 +38,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     return;
   }
 
-  const embed = await buildLiveProgressEmbed();
+  const embed = await buildLiveProgressEmbed(guildId);
   const msg = await targetChannel.send({ embeds: [embed] });
 
   try {
@@ -46,26 +47,9 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     // non-critical — bot may lack pin perms
   }
 
-  const existing = await db.select().from(eventConfigTable).where(eq(eventConfigTable.id, 1));
-  if (existing.length === 0) {
-    await db.insert(eventConfigTable).values({
-      id: 1,
-      liveProgressChannelId: targetChannel.id,
-      liveProgressMessageId: msg.id,
-      updatedAt: new Date(),
-    });
-  } else {
-    await db
-      .update(eventConfigTable)
-      .set({
-        liveProgressChannelId: targetChannel.id,
-        liveProgressMessageId: msg.id,
-        updatedAt: new Date(),
-      })
-      .where(eq(eventConfigTable.id, 1));
-  }
+  await upsertEventConfig(guildId, { liveProgressChannelId: targetChannel.id, liveProgressMessageId: msg.id });
 
-  logger.info({ channelId: targetChannel.id, messageId: msg.id }, "Live progress embed posted");
+  logger.info({ guildId, channelId: targetChannel.id, messageId: msg.id }, "Live progress embed posted");
 
   await interaction.editReply({
     embeds: [
