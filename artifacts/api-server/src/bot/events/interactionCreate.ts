@@ -111,7 +111,7 @@ export async function onInteractionCreate(client: Client, interaction: Interacti
   try {
     await handler(interaction, client);
   } catch (err) {
-    logger.error({ err, command: interaction.commandName }, "Error handling slash command");
+    logger.error({ err, message: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined, command: interaction.commandName }, "Error handling slash command");
     const errMsg = `❌ **Error in \`/${interaction.commandName}\`:**\n\`\`\`${err instanceof Error ? err.message : String(err)}\`\`\``;
     const msg = { content: errMsg, ephemeral: true };
     if (interaction.replied || interaction.deferred) {

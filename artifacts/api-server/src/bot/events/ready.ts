@@ -99,7 +99,7 @@ export async function onReady(client: Client): Promise<void> {
       await seedMilestones(guild.id);
       await scheduleEventStart(client, guild.id);
     } catch (err) {
-      logger.error({ err, guildId: guild.id }, "Error during per-guild setup on ready");
+      logger.error({ err, message: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined, guildId: guild.id }, "Error during per-guild setup on ready");
     }
   }
 
