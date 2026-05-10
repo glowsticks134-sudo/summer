@@ -111,7 +111,7 @@ async function tick(client: Client): Promise<void> {
       const embed = await buildLiveProgressEmbed(config.guildId);
       await message.edit({ embeds: [embed] });
     } catch (err) {
-      logger.warn({ err, guildId: config.guildId }, "Live progress embed update failed");
+      logger.warn({ err, message: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined, guildId: config.guildId }, "Live progress embed update failed");
     }
   }
 }
@@ -119,7 +119,7 @@ async function tick(client: Client): Promise<void> {
 export function startLiveProgressUpdater(client: Client): void {
   if (updaterInterval) clearInterval(updaterInterval);
   updaterInterval = setInterval(() => {
-    tick(client).catch((err) => logger.error({ err }, "Live progress tick error"));
+    tick(client).catch((err) => logger.error({ err, message: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined }, "Live progress tick error"));
   }, UPDATE_INTERVAL_MS);
   logger.info({ intervalMs: UPDATE_INTERVAL_MS }, "Live progress updater started");
 }
